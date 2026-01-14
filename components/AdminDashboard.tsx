@@ -27,26 +27,33 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
 }) => {
   const [activeTab, setActiveTab] = useState<'overview' | 'regu' | 'citizens' | 'absensi' | 'meetings' | 'settings'>('overview');
   const [selectedCitizenId, setSelectedCitizenId] = useState<string | null>(null);
-  const [sortOrder, setSortOrder] = useState<'default' | 'tab_desc' | 'tab_asc' | 'date_desc' | 'date_asc'>('date_desc');
+  
+  // State Filter Waktu
+  const [filterType, setFilterType] = useState<'daily' | 'monthly' | 'yearly'>('monthly');
+  const [filterDate, setFilterDate] = useState(new Date().toISOString().split('T')[0]);
+  const [filterMonth, setFilterMonth] = useState(new Date().toISOString().slice(0, 7)); // YYYY-MM
+  const [filterYear, setFilterYear] = useState(new Date().getFullYear().toString());
+
+  // State Pengurutan
+  const [sortOrder, setSortOrder] = useState<'tab_desc' | 'tab_asc' | 'alphabet' | 'house_order'>('tab_desc');
+  
   const [isResetting, setIsResetting] = useState(false);
   const [newReguName, setNewReguName] = useState('');
 
-  // Perhitungan statistik (Jimpitan vs Tabungan)
-  const stats = useMemo(() => {
-    return jimpitanData.reduce((acc, item) => {
-      const amt = Number(item.amount) || 0;
-      const jPart = Number(item.jimpitanPortion) || Math.min(amt, settings.jimpitanNominal || 1000);
-      const sPart = Number(item.savingsPortion) || Math.max(0, amt - jPart);
-      acc.total += amt;
-      acc.jimpitan += jPart;
-      acc.savings += sPart;
-      return acc;
-    }, { total: 0, jimpitan: 0, savings: 0 });
-  }, [jimpitanData, settings.jimpitanNominal]);
+  // 1. Filter Data Berdasarkan Waktu/Durasi
+  const filteredData = useMemo(() => {
+    return jimpitanData.filter(item => {
+      const itemDate = item.date; // Format YYYY-MM-DD
+      if (filterType === 'daily') return itemDate === filterDate;
+      if (filterType === 'monthly') return itemDate.startsWith(filterMonth);
+      if (filterType === 'yearly') return itemDate.startsWith(filterYear);
+      return true;
+    });
+  }, [jimpitanData, filterType, filterDate, filterMonth, filterYear]);
 
-  // Perintah 2: Sorting Lanjutan (Urutan Dasar, Tabungan, Tanggal)
+  // 2. Pengurutan Data (Berdasarkan Jumlah/Abjad/Rumah)
   const sortedJimpitan = useMemo(() => {
-    return [...jimpitanData].sort((a, b) => {
+    return [...filteredData].sort((a, b) => {
       switch (sortOrder) {
         case 'tab_desc': {
           const sA = Number(a.savingsPortion) || Math.max(0, a.amount - settings.jimpitanNominal);
@@ -58,21 +65,36 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
           const sB = Number(b.savingsPortion) || Math.max(0, b.amount - settings.jimpitanNominal);
           return sA - sB;
         }
-        case 'date_desc':
-          return new Date(b.date).getTime() - new Date(a.date).getTime();
-        case 'date_asc':
-          return new Date(a.date).getTime() - new Date(b.date).getTime();
-        case 'default':
+        case 'alphabet':
+          return a.citizenName.localeCompare(b.citizenName);
+        case 'house_order':
+          // Urutan rumah sesuai displayOrder yang diatur admin (default urutan input)
+          const citA = citizens.find(c => c.id === a.citizenId)?.displayOrder || 999;
+          const citB = citizens.find(c => c.id === b.citizenId)?.displayOrder || 999;
+          return citA - citB;
         default:
-          return 0; // Mengikuti urutan input asli (push order)
+          return 0;
       }
     });
-  }, [jimpitanData, sortOrder, settings.jimpitanNominal]);
+  }, [filteredData, sortOrder, settings.jimpitanNominal, citizens]);
+
+  const stats = useMemo(() => {
+    return sortedJimpitan.reduce((acc, item) => {
+      const amt = Number(item.amount) || 0;
+      const jPart = Number(item.jimpitanPortion) || Math.min(amt, settings.jimpitanNominal || 1000);
+      const sPart = Number(item.savingsPortion) || Math.max(0, amt - jPart);
+      acc.total += amt;
+      acc.jimpitan += jPart;
+      acc.savings += sPart;
+      return acc;
+    }, { total: 0, jimpitan: 0, savings: 0 });
+  }, [sortedJimpitan, settings.jimpitanNominal]);
 
   const exportToCSV = () => {
+    let periodInfo = filterType === 'daily' ? filterDate : filterType === 'monthly' ? filterMonth : filterYear;
     let csv = `LAPORAN KEUANGAN JIMPITAN - ${settings.villageName}\n`;
-    csv += `Tanggal Export: ${new Date().toLocaleDateString()}\n`;
-    csv += `Mode Urutan: ${sortOrder}\n\n`;
+    csv += `Periode: ${periodInfo} (${filterType})\n`;
+    csv += `Urutan: ${sortOrder}\n\n`;
     csv += "Tanggal,Nama Warga,Regu,Porsi Jimpitan,Porsi Tabungan,Total Iuran\n";
     
     sortedJimpitan.forEach(item => {
@@ -85,7 +107,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `Laporan_Jimpitan_${sortOrder}.csv`;
+    a.download = `Laporan_Jimpitan_${filterType}_${periodInfo}_${sortOrder}.csv`;
     a.click();
   };
 
@@ -132,54 +154,107 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
       {activeTab === 'overview' && (
         <div className="space-y-6">
+          {/* Dashboard Stats */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="bg-white p-6 rounded-2xl shadow-sm border"><p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Kas RT (Jimpitan)</p><h2 className="text-2xl font-black text-blue-700">Rp {stats.jimpitan.toLocaleString()}</h2></div>
             <div className="bg-white p-6 rounded-2xl shadow-sm border"><p className="text-[10px] font-bold text-emerald-400 uppercase tracking-widest">Tabungan Warga</p><h2 className="text-2xl font-black text-emerald-700">Rp {stats.savings.toLocaleString()}</h2></div>
             <div className="bg-white p-6 rounded-2xl shadow-sm border"><p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Total Keseluruhan</p><h2 className="text-2xl font-black text-slate-800">Rp {stats.total.toLocaleString()}</h2></div>
           </div>
 
+          {/* Panel Filter dan Export */}
           <div className="bg-white rounded-2xl shadow-sm border overflow-hidden">
-             <div className="px-6 py-4 border-b flex flex-wrap gap-2 justify-between items-center bg-slate-50">
-               <span className="font-bold text-sm uppercase tracking-widest">Log Transaksi Keseluruhan</span>
-               <div className="flex gap-2">
-                 <select value={sortOrder} onChange={(e) => setSortOrder(e.target.value as any)} className="text-[10px] border rounded px-2 py-1 outline-none font-bold bg-white">
-                   <option value="date_desc">Tanggal: Terbaru</option>
-                   <option value="date_asc">Tanggal: Terlama</option>
-                   <option value="tab_desc">Tabungan: Tertinggi</option>
-                   <option value="tab_asc">Tabungan: Terendah</option>
-                   <option value="default">Urutan Dasar</option>
-                 </select>
-                 <button onClick={exportToCSV} className="bg-emerald-600 text-white text-[10px] font-bold px-3 py-1 rounded-lg uppercase tracking-widest">Export CSV</button>
-               </div>
-             </div>
-             <div className="overflow-x-auto">
-               <table className="w-full text-left text-sm">
-                 <thead className="bg-slate-50 text-[10px] uppercase font-bold text-slate-400 border-b">
+            <div className="p-6 bg-slate-50 border-b space-y-4">
+              <div className="flex flex-col md:flex-row gap-4 justify-between items-start md:items-center">
+                <div className="space-y-1">
+                  <h3 className="font-black text-slate-800 uppercase text-sm tracking-tight">Filter Laporan</h3>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Atur Durasi dan Pengurutan Data</p>
+                </div>
+                <button onClick={exportToCSV} className="bg-emerald-600 text-white text-[11px] font-black px-5 py-2.5 rounded-xl uppercase tracking-widest shadow-lg shadow-emerald-100 hover:bg-emerald-700 active:scale-95 transition-all">Export CSV</button>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+                {/* 1. Filter Waktu */}
+                <div className="space-y-1">
+                  <label className="text-[9px] font-bold text-slate-500 uppercase ml-1">Durasi Waktu</label>
+                  <select value={filterType} onChange={(e) => setFilterType(e.target.value as any)} className="w-full text-xs font-bold border rounded-xl px-3 py-2 bg-white outline-none">
+                    <option value="daily">Harian (Pilih Tanggal)</option>
+                    <option value="monthly">Bulanan (Pilih Bulan)</option>
+                    <option value="yearly">Tahunan (Pilih Tahun)</option>
+                  </select>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[9px] font-bold text-slate-500 uppercase ml-1">Pilih {filterType === 'daily' ? 'Tanggal' : filterType === 'monthly' ? 'Bulan' : 'Tahun'}</label>
+                  {filterType === 'daily' && (
+                    <input type="date" value={filterDate} onChange={(e) => setFilterDate(e.target.value)} className="w-full text-xs font-bold border rounded-xl px-3 py-2 bg-white" />
+                  )}
+                  {filterType === 'monthly' && (
+                    <input type="month" value={filterMonth} onChange={(e) => setFilterMonth(e.target.value)} className="w-full text-xs font-bold border rounded-xl px-3 py-2 bg-white" />
+                  )}
+                  {filterType === 'yearly' && (
+                    <select value={filterYear} onChange={(e) => setFilterYear(e.target.value)} className="w-full text-xs font-bold border rounded-xl px-3 py-2 bg-white">
+                      {[2024, 2025, 2026, 2027].map(y => <option key={y} value={y.toString()}>{y}</option>)}
+                    </select>
+                  )}
+                </div>
+
+                {/* 2. Filter Pengurutan */}
+                <div className="space-y-1">
+                  <label className="text-[9px] font-bold text-slate-500 uppercase ml-1">Urutan Berdasarkan</label>
+                  <select value={sortOrder} onChange={(e) => setSortOrder(e.target.value as any)} className="w-full text-xs font-bold border rounded-xl px-3 py-2 bg-white outline-none">
+                    <option value="tab_desc">Tabungan: Tertinggi</option>
+                    <option value="tab_asc">Tabungan: Terendah</option>
+                    <option value="alphabet">Abjad (Nama A-Z)</option>
+                    <option value="house_order">Urutan Rumah (Sesuai Regu)</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm">
+                <thead className="bg-white text-[10px] uppercase font-bold text-slate-400 border-b">
+                  <tr>
+                    <th className="px-6 py-4">Warga</th>
+                    <th className="px-6 py-4 text-right">Jimpitan (1k)</th>
+                    <th className="px-6 py-4 text-right">Tabungan</th>
+                    <th className="px-6 py-4 text-right font-black">Total</th>
+                    <th className="px-6 py-4">Tanggal</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y">
+                  {sortedJimpitan.map(item => {
+                    const jPart = Number(item.jimpitanPortion) || Math.min(item.amount, settings.jimpitanNominal);
+                    const sPart = Number(item.savingsPortion) || Math.max(0, item.amount - settings.jimpitanNominal);
+                    return (
+                      <tr key={item.id} className="hover:bg-blue-50/30 transition-colors">
+                        <td className="px-6 py-4 font-bold text-slate-700">{item.citizenName}</td>
+                        <td className="px-6 py-4 text-right text-blue-600 font-medium">Rp {jPart.toLocaleString()}</td>
+                        <td className="px-6 py-4 text-right text-emerald-600 font-black">Rp {sPart.toLocaleString()}</td>
+                        <td className="px-6 py-4 text-right font-black text-slate-800">Rp {item.amount.toLocaleString()}</td>
+                        <td className="px-6 py-4 text-[10px] font-mono text-slate-400">{item.date}</td>
+                      </tr>
+                    );
+                  })}
+                  {sortedJimpitan.length === 0 && (
                     <tr>
-                      <th className="px-6 py-3">Warga</th>
-                      <th className="px-6 py-3 text-right">Jimpitan (1k)</th>
-                      <th className="px-6 py-3 text-right">Tabungan</th>
-                      <th className="px-6 py-3 text-right font-black">Total</th>
-                      <th className="px-6 py-3">Tanggal</th>
+                      <td colSpan={5} className="px-6 py-20 text-center text-slate-400 font-medium italic">Data tidak ditemukan pada periode ini.</td>
                     </tr>
-                 </thead>
-                 <tbody className="divide-y">
-                   {sortedJimpitan.map(item => {
-                     const jPart = Number(item.jimpitanPortion) || Math.min(item.amount, settings.jimpitanNominal);
-                     const sPart = Number(item.savingsPortion) || Math.max(0, item.amount - settings.jimpitanNominal);
-                     return (
-                       <tr key={item.id} className="hover:bg-slate-50">
-                         <td className="px-6 py-4 font-bold text-slate-700">{item.citizenName}</td>
-                         <td className="px-6 py-4 text-right text-blue-600 font-medium">Rp {jPart.toLocaleString()}</td>
-                         <td className="px-6 py-4 text-right text-emerald-600 font-bold">Rp {sPart.toLocaleString()}</td>
-                         <td className="px-6 py-4 text-right font-black">Rp {item.amount.toLocaleString()}</td>
-                         <td className="px-6 py-4 text-[10px] font-mono text-slate-400">{item.date}</td>
-                       </tr>
-                     );
-                   })}
-                 </tbody>
-               </table>
-             </div>
+                  )}
+                </tbody>
+                {sortedJimpitan.length > 0 && (
+                  <tfoot className="bg-slate-50 font-black text-slate-800 border-t">
+                    <tr>
+                      <td className="px-6 py-4 uppercase text-xs">Total Halaman Ini</td>
+                      <td className="px-6 py-4 text-right text-blue-700">Rp {stats.jimpitan.toLocaleString()}</td>
+                      <td className="px-6 py-4 text-right text-emerald-700">Rp {stats.savings.toLocaleString()}</td>
+                      <td className="px-6 py-4 text-right">Rp {stats.total.toLocaleString()}</td>
+                      <td></td>
+                    </tr>
+                  </tfoot>
+                )}
+              </table>
+            </div>
           </div>
         </div>
       )}
