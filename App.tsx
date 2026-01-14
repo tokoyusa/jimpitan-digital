@@ -130,11 +130,37 @@ const App: React.FC = () => {
     init();
 
     window.addEventListener('beforeinstallprompt', (e) => {
-      e.preventDefault();
-      setDeferredPrompt(e);
-      setShowInstallBanner(true);
+      // Deteksi mobile secara sederhana melalui userAgent atau screen width
+      const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) || window.innerWidth < 768;
+      
+      if (isMobile) {
+        e.preventDefault();
+        setDeferredPrompt(e);
+        setShowInstallBanner(true);
+      }
+    });
+
+    window.addEventListener('appinstalled', () => {
+      setDeferredPrompt(null);
+      setShowInstallBanner(false);
+      console.log('PWA installed');
     });
   }, []);
+
+  const handleInstallClick = async () => {
+    if (!deferredPrompt) return;
+    
+    // Tampilkan prompt instalasi browser
+    deferredPrompt.prompt();
+    
+    // Tunggu respon pengguna
+    const { outcome } = await deferredPrompt.userChoice;
+    console.log(`User response to install prompt: ${outcome}`);
+    
+    // Reset prompt karena hanya bisa digunakan sekali
+    setDeferredPrompt(null);
+    setShowInstallBanner(false);
+  };
 
   const handleManualConfig = (e: React.FormEvent) => {
     e.preventDefault();
@@ -226,14 +252,20 @@ const App: React.FC = () => {
       )}
 
       {showInstallBanner && (
-        <div className="fixed bottom-4 left-4 right-4 z-[100] bg-blue-700 text-white p-4 rounded-2xl shadow-2xl border border-blue-500 flex items-center justify-between">
+        <div className="fixed bottom-4 left-4 right-4 z-[100] bg-blue-700 text-white p-4 rounded-2xl shadow-2xl border border-blue-500 flex items-center justify-between animate-bounce">
           <div className="flex items-center gap-3">
-            <div className="bg-white p-2 rounded-lg">
+            <div className="bg-white p-2 rounded-lg shadow-inner">
               <img src="https://cdn-icons-png.flaticon.com/512/3135/3135715.png" alt="icon" className="w-6 h-6" />
             </div>
-            <div><p className="font-bold text-sm">Instal Aplikasi?</p></div>
+            <div>
+              <p className="font-bold text-sm leading-tight">Gunakan Aplikasi?</p>
+              <p className="text-[10px] text-blue-200">Tambahkan ke layar utama HP</p>
+            </div>
           </div>
-          <button onClick={() => setShowInstallBanner(false)} className="bg-white text-blue-700 px-4 py-1 rounded-lg text-xs font-bold uppercase">Instal</button>
+          <div className="flex gap-2">
+            <button onClick={() => setShowInstallBanner(false)} className="text-white/70 text-[10px] font-bold uppercase px-2">Nanti</button>
+            <button onClick={handleInstallClick} className="bg-white text-blue-700 px-4 py-2 rounded-xl text-xs font-black uppercase shadow-sm active:scale-95 transition-transform">Instal</button>
+          </div>
         </div>
       )}
 
