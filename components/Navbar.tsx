@@ -12,15 +12,26 @@ interface NavbarProps {
 const Navbar: React.FC<NavbarProps> = ({ user, onLogout, villageName }) => {
   const [dbStatus, setDbStatus] = useState<'checking' | 'connected' | 'error' | 'offline'>('checking');
 
-  useEffect(() => {
+  const checkConnection = async () => {
     if (!isConfigured) {
       setDbStatus('offline');
       return;
     }
     
-    db.testConnection().then(connected => {
+    try {
+      const connected = await db.testConnection();
       setDbStatus(connected ? 'connected' : 'error');
-    });
+    } catch (err) {
+      setDbStatus('error');
+    }
+  };
+
+  useEffect(() => {
+    checkConnection();
+    
+    // Cek ulang koneksi setiap 30 detik untuk memastikan status tetap hijau
+    const interval = setInterval(checkConnection, 30000);
+    return () => clearInterval(interval);
   }, []);
 
   return (
@@ -32,27 +43,27 @@ const Navbar: React.FC<NavbarProps> = ({ user, onLogout, villageName }) => {
               <span className="font-bold text-lg leading-tight tracking-tight">JIMPITAN DIGITAL</span>
               {/* Database Status Indicator */}
               <div 
-                className={`w-2 h-2 rounded-full ${
-                  dbStatus === 'connected' ? 'bg-emerald-400 animate-pulse' : 
-                  dbStatus === 'error' ? 'bg-red-400' : 
-                  dbStatus === 'offline' ? 'bg-amber-400' : 'bg-slate-400'
+                className={`w-2.5 h-2.5 rounded-full border border-white/20 ${
+                  dbStatus === 'connected' ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.6)]' : 
+                  dbStatus === 'error' ? 'bg-red-500' : 
+                  dbStatus === 'offline' ? 'bg-amber-400' : 'bg-slate-400 animate-pulse'
                 }`}
-                title={`Database: ${dbStatus}`}
+                title={`Database: ${dbStatus === 'connected' ? 'Terkoneksi (Cloud)' : dbStatus === 'offline' ? 'Mode Offline (Cek API Key)' : 'Gangguan Koneksi'}`}
               />
             </div>
-            <span className="text-xs text-blue-100">{villageName}</span>
+            <span className="text-[10px] text-blue-200 uppercase tracking-tighter font-medium">{villageName}</span>
           </div>
           
           <div className="flex items-center gap-4">
-            <div className="text-right hidden sm:block">
-              <p className="text-sm font-medium">{user.username}</p>
-              <p className="text-[10px] uppercase tracking-wider text-blue-200">{user.role}</p>
+            <div className="text-right hidden xs:block">
+              <p className="text-sm font-bold leading-none">{user.username}</p>
+              <p className="text-[9px] uppercase tracking-widest text-blue-300 mt-1">{user.role}</p>
             </div>
             <button 
               onClick={onLogout}
-              className="bg-red-500 hover:bg-red-600 px-3 py-1.5 rounded-md text-sm font-medium transition-colors"
+              className="bg-red-500 hover:bg-red-600 px-3 py-1.5 rounded-lg text-xs font-bold transition-all shadow-md active:scale-95"
             >
-              Logout
+              LOGOUT
             </button>
           </div>
         </div>
