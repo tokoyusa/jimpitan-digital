@@ -53,4 +53,7 @@ export interface Attendance {
   citizenId: string;
   status: 'HADIR' | 'TIDAK_HADIR' | 'IZIN';
   reason?: string;
+  // Fix: Added missing date and reguId properties used in Dashboards
+  date: string;
+  reguId?: string;
 }

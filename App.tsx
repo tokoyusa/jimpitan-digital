@@ -84,11 +84,11 @@ const App: React.FC = () => {
         citizenName: j.citizen_name,
         amount: j.amount,
         jimpitanPortion: j.jimpitan_portion,
-        savingsPortion: j.savings_portion,
+        savings_portion: j.savings_portion,
         date: j.date,
         reguName: j.regu_name,
-        isSent: j.is_sent,
-        isSaved: j.is_saved
+        is_sent: j.is_sent,
+        is_saved: j.is_saved
       })));
 
       if (mData) setMeetings(mData.map((m: any) => ({
@@ -99,7 +99,16 @@ const App: React.FC = () => {
         notes: m.notes
       })));
 
-      if (aData) setAttendances(aData as any);
+      // Fix: Correctly map attendance fields from database
+      if (aData) setAttendances(aData.map((a: any) => ({
+        id: a.id,
+        meetingId: a.meeting_id,
+        citizenId: a.citizen_id,
+        status: a.status,
+        reason: a.reason,
+        date: a.date,
+        reguId: a.regu_id
+      })));
     } catch (e) {
       console.error("Fetch Error:", e);
     }
@@ -299,7 +308,17 @@ const App: React.FC = () => {
                 setAttendances={async (a: any) => {
                   const val = typeof a === 'function' ? a(attendances) : a;
                   setAttendances(val);
-                  if(isConfigured) await supabase.from('attendances').upsert(val);
+                  if(isConfigured) {
+                    await supabase.from('attendances').upsert(val.map((item: any) => ({
+                      id: item.id,
+                      meeting_id: item.meetingId,
+                      citizen_id: item.citizenId,
+                      status: item.status,
+                      reason: item.reason,
+                      date: item.date,
+                      regu_id: item.reguId
+                    })));
+                  }
                 }}
               />
             )}
@@ -330,7 +349,17 @@ const App: React.FC = () => {
                 setAttendances={async (val: any) => {
                   const newData = typeof val === 'function' ? val(attendances) : val;
                   setAttendances(newData);
-                  if(isConfigured) await supabase.from('attendances').upsert(newData);
+                  if(isConfigured) {
+                    await supabase.from('attendances').upsert(newData.map((item: any) => ({
+                      id: item.id,
+                      meeting_id: item.meetingId,
+                      citizen_id: item.citizenId,
+                      status: item.status,
+                      reason: item.reason,
+                      date: item.date,
+                      regu_id: item.reguId
+                    })));
+                  }
                 }}
                 users={users} setUsers={syncUsers}
               />
