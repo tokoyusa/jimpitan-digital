@@ -27,7 +27,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
 }) => {
   const [activeTab, setActiveTab] = useState<'overview' | 'regu' | 'citizens' | 'absensi' | 'meetings' | 'settings'>('overview');
   const [selectedCitizenId, setSelectedCitizenId] = useState<string | null>(null);
-  const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('desc');
+  const [sortOrder, setSortOrder] = useState<'default' | 'tab_desc' | 'tab_asc' | 'date_desc' | 'date_asc'>('date_desc');
   const [isResetting, setIsResetting] = useState(false);
   const [newReguName, setNewReguName] = useState('');
 
@@ -44,19 +44,35 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }, { total: 0, jimpitan: 0, savings: 0 });
   }, [jimpitanData, settings.jimpitanNominal]);
 
-  // Sorting berdasarkan TABUNGAN sesuai perintah instruksi (Instruksi 2)
+  // Perintah 2: Sorting Lanjutan (Urutan Dasar, Tabungan, Tanggal)
   const sortedJimpitan = useMemo(() => {
     return [...jimpitanData].sort((a, b) => {
-      const savingsA = Number(a.savingsPortion) || Math.max(0, a.amount - settings.jimpitanNominal);
-      const savingsB = Number(b.savingsPortion) || Math.max(0, b.amount - settings.jimpitanNominal);
-      return sortOrder === 'desc' ? savingsB - savingsA : savingsA - savingsB;
+      switch (sortOrder) {
+        case 'tab_desc': {
+          const sA = Number(a.savingsPortion) || Math.max(0, a.amount - settings.jimpitanNominal);
+          const sB = Number(b.savingsPortion) || Math.max(0, b.amount - settings.jimpitanNominal);
+          return sB - sA;
+        }
+        case 'tab_asc': {
+          const sA = Number(a.savingsPortion) || Math.max(0, a.amount - settings.jimpitanNominal);
+          const sB = Number(b.savingsPortion) || Math.max(0, b.amount - settings.jimpitanNominal);
+          return sA - sB;
+        }
+        case 'date_desc':
+          return new Date(b.date).getTime() - new Date(a.date).getTime();
+        case 'date_asc':
+          return new Date(a.date).getTime() - new Date(b.date).getTime();
+        case 'default':
+        default:
+          return 0; // Mengikuti urutan input asli (push order)
+      }
     });
   }, [jimpitanData, sortOrder, settings.jimpitanNominal]);
 
   const exportToCSV = () => {
     let csv = `LAPORAN KEUANGAN JIMPITAN - ${settings.villageName}\n`;
     csv += `Tanggal Export: ${new Date().toLocaleDateString()}\n`;
-    csv += `Urutan: ${sortOrder === 'desc' ? 'Tabungan Tertinggi' : 'Tabungan Terendah'}\n\n`;
+    csv += `Mode Urutan: ${sortOrder}\n\n`;
     csv += "Tanggal,Nama Warga,Regu,Porsi Jimpitan,Porsi Tabungan,Total Iuran\n";
     
     sortedJimpitan.forEach(item => {
@@ -69,7 +85,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `Laporan_Jimpitan_${sortOrder === 'desc' ? 'Tabungan_Tertinggi' : 'Tabungan_Terendah'}.csv`;
+    a.download = `Laporan_Jimpitan_${sortOrder}.csv`;
     a.click();
   };
 
@@ -79,12 +95,10 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
     return {
       citizen,
       history: jimpitanData.filter(j => j.citizenId === selectedCitizenId),
-      // Instruksi 3: Menampilkan riwayat absensi warga yang dikirim oleh REGU
       absensi: attendances.filter(a => a.citizenId === selectedCitizenId)
     };
   }, [selectedCitizenId, jimpitanData, attendances, citizens]);
 
-  // Fix: Added missing handleResetData function to clear database tables
   const handleResetData = async () => {
     if (!confirm('PERINGATAN! Seluruh data transaksi, absensi, dan rapat akan dihapus permanen. Lanjutkan?')) return;
     
@@ -125,12 +139,15 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
           </div>
 
           <div className="bg-white rounded-2xl shadow-sm border overflow-hidden">
-             <div className="px-6 py-4 border-b flex justify-between items-center bg-slate-50">
-               <span className="font-bold text-sm uppercase tracking-widest">Log Transaksi (Urut Tabungan)</span>
+             <div className="px-6 py-4 border-b flex flex-wrap gap-2 justify-between items-center bg-slate-50">
+               <span className="font-bold text-sm uppercase tracking-widest">Log Transaksi Keseluruhan</span>
                <div className="flex gap-2">
-                 <select value={sortOrder} onChange={(e) => setSortOrder(e.target.value as any)} className="text-xs border rounded px-2 py-1 outline-none font-bold">
-                   <option value="desc">Tabungan Tertinggi</option>
-                   <option value="asc">Tabungan Terendah</option>
+                 <select value={sortOrder} onChange={(e) => setSortOrder(e.target.value as any)} className="text-[10px] border rounded px-2 py-1 outline-none font-bold bg-white">
+                   <option value="date_desc">Tanggal: Terbaru</option>
+                   <option value="date_asc">Tanggal: Terlama</option>
+                   <option value="tab_desc">Tabungan: Tertinggi</option>
+                   <option value="tab_asc">Tabungan: Terendah</option>
+                   <option value="default">Urutan Dasar</option>
                  </select>
                  <button onClick={exportToCSV} className="bg-emerald-600 text-white text-[10px] font-bold px-3 py-1 rounded-lg uppercase tracking-widest">Export CSV</button>
                </div>
@@ -331,7 +348,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block ml-1 mb-1">Nama Desa / RT / RW</label>
                 <input value={settings.villageName} onChange={e => setSettings({...settings, villageName: e.target.value})} className="w-full px-4 py-3 border rounded-xl font-bold bg-slate-50 focus:bg-white transition-all" />
               </div>
-              {/* Instruksi 5: Tambahkan Alamat Profil */}
               <div>
                 <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block ml-1 mb-1">Alamat Lengkap Lingkungan</label>
                 <textarea value={settings.address} onChange={e => setSettings({...settings, address: e.target.value})} className="w-full px-4 py-3 border rounded-xl font-medium bg-slate-50 focus:bg-white transition-all" rows={3} placeholder="Masukkan alamat lengkap..." />

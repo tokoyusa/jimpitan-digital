@@ -30,12 +30,10 @@ const ReguDashboard: React.FC<ReguDashboardProps> = ({
   
   const reportRef = useRef<HTMLDivElement>(null);
 
-  // Perintah 1: Jimpitan menampilkan SEMUA warga sesuai urutan displayOrder dari Admin
   const allOrderedCitizens = useMemo(() => {
     return [...citizens].sort((a, b) => (a.displayOrder || 0) - (b.displayOrder || 0));
   }, [citizens]);
 
-  // Perintah Baru: Absensi hanya menampilkan anggota REGU tertentu yang sedang login
   const myReguMembers = useMemo(() => {
     return citizens
       .filter(c => c.reguId === user.id)
@@ -56,7 +54,8 @@ const ReguDashboard: React.FC<ReguDashboardProps> = ({
       const sPortion = Math.max(0, numAmount - settings.jimpitanNominal);
 
       return {
-        id: `rec-${Date.now()}-${citizen.id}`,
+        // ID unik berdasarkan tanggal dan ID warga agar bisa di-upsert di database jika perlu
+        id: `rec-${jimpitanDate}-${citizen.id}`,
         citizenId: citizen.id,
         citizenName: citizen.name,
         amount: numAmount,
@@ -75,15 +74,22 @@ const ReguDashboard: React.FC<ReguDashboardProps> = ({
 
   const handleSendToAdmin = () => {
     if (!isSaved) return alert('Simpan data dahulu.');
-    setJimpitanData(prev => [...prev, ...lastSavedRecords.map(r => ({ ...r, isSent: true }))]);
+    
+    setJimpitanData(prev => {
+      // Perintah 1: Menghapus data lama dengan warga dan tanggal yang sama sebelum memasukkan data baru
+      const newBatchIds = new Set(lastSavedRecords.map(r => `${r.date}-${r.citizenId}`));
+      const filteredPrev = prev.filter(p => !newBatchIds.has(`${p.date}-${p.citizenId}`));
+      return [...filteredPrev, ...lastSavedRecords.map(r => ({ ...r, isSent: true }))];
+    });
+
     setSessionInputs({});
     setIsSaved(false);
-    alert('Data Jimpitan terkirim ke Admin!');
+    alert('Data Jimpitan terkirim ke Admin! (Data pada tanggal yang sama telah diperbarui)');
   };
 
   const downloadCSV = () => {
     let csv = `LAPORAN JIMPITAN DIGITAL\nRegu: ${user.username}\nTanggal: ${jimpitanDate}\n\n`;
-    csv += "Nomor,Nama Warga,Nominal\n"; // Disederhanakan sesuai perintah
+    csv += "Nomor,Nama Warga,Nominal\n";
     lastSavedRecords.forEach((r, i) => {
       csv += `${i+1},${r.citizenName},${r.amount}\n`;
     });
@@ -107,16 +113,26 @@ const ReguDashboard: React.FC<ReguDashboardProps> = ({
   const handleAttendanceSubmit = () => {
     const entries = Object.entries(tempAttendance);
     if (entries.length === 0) return alert('Isi absensi dahulu.');
-    const newAtt = entries.map(([cid, data]) => ({
-      id: `att-${Date.now()}-${cid}`,
-      meetingId: 'ronda-harian',
-      citizenId: cid,
-      status: (data as any).status,
-      reason: (data as any).reason,
-      date: jimpitanDate,
-      reguId: user.id
-    }));
-    setAttendances(prev => [...prev, ...newAtt]);
+    
+    const newAtt: Attendance[] = entries.map(([cid, data]) => {
+      const attendanceData = data as { status: 'HADIR' | 'TIDAK_HADIR' | 'IZIN', reason?: string };
+      return {
+        id: `att-${jimpitanDate}-${cid}`,
+        meetingId: 'ronda-harian',
+        citizenId: cid,
+        status: attendanceData.status,
+        reason: attendanceData.reason,
+        date: jimpitanDate,
+        reguId: user.id
+      };
+    });
+
+    setAttendances(prev => {
+      const newAttIds = new Set(newAtt.map(a => `${a.date}-${a.citizenId}`));
+      const filteredPrev = prev.filter(p => !newAttIds.has(`${p.date}-${p.citizenId}`));
+      return [...filteredPrev, ...newAtt];
+    });
+
     setTempAttendance({});
     alert('Absensi ronda berhasil dikirim.');
   };
@@ -217,7 +233,7 @@ const ReguDashboard: React.FC<ReguDashboardProps> = ({
                 <div className="flex justify-between items-center">
                   <span className="font-bold">{c.name}</span>
                   <div className="flex gap-1">
-                    {['HADIR', 'TIDAK_HADIR', 'IZIN'].map(s => (
+                    {(['HADIR', 'TIDAK_HADIR', 'IZIN'] as const).map(s => (
                       <button key={s} onClick={() => setTempAttendance(prev => ({ ...prev, [c.id]: { ...prev[c.id], status: s } }))} className={`px-2 py-1 text-[10px] font-bold rounded border ${tempAttendance[c.id]?.status === s ? 'bg-blue-600 text-white' : 'bg-white text-slate-400'}`}>{s === 'TIDAK_HADIR' ? 'ALFA' : s}</button>
                     ))}
                   </div>
