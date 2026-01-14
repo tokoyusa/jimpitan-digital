@@ -34,15 +34,9 @@ const App: React.FC = () => {
   const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [attendances, setAttendances] = useState<Attendance[]>([]);
 
-  // 1. Fetch data dari Supabase saat aplikasi dimuat
-  const loadDataFromDB = async () => {
-    if (!isConfigured) {
-      const savedUsers = localStorage.getItem('jimpitan_users');
-      if (savedUsers) setUsers(JSON.parse(savedUsers));
-      setLoading(false);
-      return;
-    }
-
+  // 1. Fungsi Utama Fetch Data
+  const loadAllData = async () => {
+    if (!isConfigured) return;
     try {
       const [
         { data: sData },
@@ -105,19 +99,36 @@ const App: React.FC = () => {
       })));
 
       if (aData) setAttendances(aData as any);
-      
-    } catch (error) {
-      console.error("Error fetching database:", error);
-    } finally {
-      setLoading(false);
+    } catch (e) {
+      console.error("Fetch Error:", e);
     }
   };
 
+  // 2. Setup Realtime & Initial Load
   useEffect(() => {
-    loadDataFromDB();
+    const init = async () => {
+      await loadAllData();
+      setLoading(false);
+
+      if (isConfigured) {
+        // SUBSCRIBE KE SEMUA PERUBAHAN TABEL
+        const channel = supabase
+          .channel('db_changes')
+          .on('postgres_changes', { event: '*', schema: 'public' }, () => {
+            console.log("Ada perubahan di database cloud! Mengupdate tampilan...");
+            loadAllData(); // Refresh data otomatis saat ada perubahan di server
+          })
+          .subscribe();
+
+        return () => {
+          supabase.removeChannel(channel);
+        };
+      }
+    };
+    init();
   }, []);
 
-  // Sync Wrappers - Penting untuk sinkronisasi antar perangkat
+  // Sync Wrappers - Fungsi pengiriman data ke Cloud
   const syncSettings = async (newSettings: Settings) => {
     setSettings(newSettings);
     if (isConfigured) {
@@ -166,7 +177,7 @@ const App: React.FC = () => {
       <div className="min-h-screen flex items-center justify-center bg-slate-50">
         <div className="text-center">
           <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-slate-500 font-bold uppercase text-[10px] tracking-widest">Sinkronisasi Awan...</p>
+          <p className="text-slate-500 font-bold uppercase text-[10px] tracking-widest">Sinkronisasi Cloud...</p>
         </div>
       </div>
     );
