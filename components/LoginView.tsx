@@ -100,14 +100,6 @@ const LoginView: React.FC<LoginViewProps> = ({ users, onLogin }) => {
             {isManual ? '← Kembali ke Dropdown' : 'Login Manual (Akun Warga)'}
           </button>
         </form>
-
-        <div className="mt-8 pt-6 border-t border-slate-100">
-          <div className="bg-slate-50 p-4 rounded-xl text-[10px] text-slate-500 leading-relaxed">
-            <p className="font-bold text-slate-600 mb-1">INFO AKSES:</p>
-            <p>• Admin: <strong>admin</strong> (Pass: <strong>password123</strong>)</p>
-            <p>• Regu/Warga: Silakan tanyakan admin untuk username & password Anda.</p>
-          </div>
-        </div>
       </div>
       
       <footer className="mt-8 text-center text-slate-400 text-xs font-medium uppercase tracking-widest">

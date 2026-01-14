@@ -10,7 +10,7 @@ interface ReguDashboardProps {
   setJimpitanData: React.Dispatch<React.SetStateAction<JimpitanRecord[]>>;
   meetings: Meeting[];
   attendances: Attendance[];
-  setAttendances: React.Dispatch<React.SetStateAction<Attendance[]>>;
+  setAttendances: (val: Attendance[] | ((prev: Attendance[]) => Attendance[])) => Promise<void>;
   users: User[];
   setUsers: React.Dispatch<React.SetStateAction<User[]>>;
 }
@@ -54,7 +54,6 @@ const ReguDashboard: React.FC<ReguDashboardProps> = ({
       const sPortion = Math.max(0, numAmount - settings.jimpitanNominal);
 
       return {
-        // ID unik berdasarkan tanggal dan ID warga agar bisa di-upsert di database jika perlu
         id: `rec-${jimpitanDate}-${citizen.id}`,
         citizenId: citizen.id,
         citizenName: citizen.name,
@@ -72,11 +71,10 @@ const ReguDashboard: React.FC<ReguDashboardProps> = ({
     setIsSaved(true);
   };
 
-  const handleSendToAdmin = () => {
+  const handleSendToAdmin = async () => {
     if (!isSaved) return alert('Simpan data dahulu.');
     
-    setJimpitanData(prev => {
-      // Perintah 1: Menghapus data lama dengan warga dan tanggal yang sama sebelum memasukkan data baru
+    await setJimpitanData(prev => {
       const newBatchIds = new Set(lastSavedRecords.map(r => `${r.date}-${r.citizenId}`));
       const filteredPrev = prev.filter(p => !newBatchIds.has(`${p.date}-${p.citizenId}`));
       return [...filteredPrev, ...lastSavedRecords.map(r => ({ ...r, isSent: true }))];
@@ -84,7 +82,7 @@ const ReguDashboard: React.FC<ReguDashboardProps> = ({
 
     setSessionInputs({});
     setIsSaved(false);
-    alert('Data Jimpitan terkirim ke Admin! (Data pada tanggal yang sama telah diperbarui)');
+    alert('Data Jimpitan terkirim ke Admin!');
   };
 
   const downloadCSV = () => {
@@ -110,7 +108,7 @@ const ReguDashboard: React.FC<ReguDashboardProps> = ({
     link.click();
   };
 
-  const handleAttendanceSubmit = () => {
+  const handleAttendanceSubmit = async () => {
     const entries = Object.entries(tempAttendance);
     if (entries.length === 0) return alert('Isi absensi dahulu.');
     
@@ -121,20 +119,21 @@ const ReguDashboard: React.FC<ReguDashboardProps> = ({
         meetingId: 'ronda-harian',
         citizenId: cid,
         status: attendanceData.status,
-        reason: attendanceData.reason,
+        reason: attendanceData.reason || '',
         date: jimpitanDate,
         reguId: user.id
       };
     });
 
-    setAttendances(prev => {
+    // Fix: Using setAttendances from props which handles Supabase sync in App.tsx
+    await setAttendances(prev => {
       const newAttIds = new Set(newAtt.map(a => `${a.date}-${a.citizenId}`));
       const filteredPrev = prev.filter(p => !newAttIds.has(`${p.date}-${p.citizenId}`));
       return [...filteredPrev, ...newAtt];
     });
 
     setTempAttendance({});
-    alert('Absensi ronda berhasil dikirim.');
+    alert('Absensi ronda berhasil dikirim ke Admin.');
   };
 
   return (
