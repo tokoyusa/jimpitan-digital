@@ -13,7 +13,7 @@ const LoginView: React.FC<LoginViewProps> = ({ users, onLogin }) => {
   const [error, setError] = useState('');
 
   const filteredUsersForDropdown = useMemo(() => {
-    return users.filter(u => u.role === UserRole.ADMIN || u.role === UserRole.REGU);
+    return users.filter(u => u.role === UserRole.ADMIN || u.role === UserRole.REGU || u.role === UserRole.WARGA);
   }, [users]);
 
   const handleLogin = (e: React.FormEvent) => {
@@ -42,22 +42,21 @@ const LoginView: React.FC<LoginViewProps> = ({ users, onLogin }) => {
 
         <form onSubmit={handleLogin} className="space-y-6">
           <div>
-            <label className="block text-sm font-semibold text-slate-700 mb-1">Nama / Regu</label>
+            <label className="block text-sm font-semibold text-slate-700 mb-1">Nama / Regu / Warga</label>
             <div className="relative">
-              <input
-                list="user-list"
-                type="text"
+              <select
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
-                placeholder="Pilih Akun Admin / Regu"
+                className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all bg-white"
                 required
-              />
-              <datalist id="user-list">
+              >
+                <option value="" disabled>-- Pilih Akun --</option>
                 {filteredUsersForDropdown.map(u => (
-                  <option key={u.id} value={u.username}>{u.role}</option>
+                  <option key={u.id} value={u.username}>
+                    {u.username} ({u.role})
+                  </option>
                 ))}
-              </datalist>
+              </select>
             </div>
           </div>
 
@@ -93,7 +92,7 @@ const LoginView: React.FC<LoginViewProps> = ({ users, onLogin }) => {
         </div>
       </div>
       
-      <footer className="mt-8 text-center text-slate-400 text-xs font-medium uppercase tracking-wider">
+      <footer className="mt-8 text-center text-slate-400 text-xs font-medium uppercase tracking-widest">
         aplikasi dibuat oleh YUSAPEDIA 2026
       </footer>
     </div>
