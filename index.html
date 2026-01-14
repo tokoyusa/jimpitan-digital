@@ -18,6 +18,8 @@
 {
   "imports": {
     "react": "https://esm.sh/react@^19.2.3",
+    "react-dom": "https://esm.sh/react-dom@^19.2.3",
+    "react-dom/client": "https://esm.sh/react-dom@^19.2.3/client",
     "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
     "react/": "https://esm.sh/react@^19.2.3/"
   }
@@ -26,15 +28,15 @@
 </head>
 <body class="bg-slate-50 text-slate-900">
     <div id="root"></div>
+    <!-- Script utama harus dimuat sebagai type="module" agar bisa menggunakan import -->
+    <script type="module" src="index.tsx"></script>
     <script>
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
-          // Menggunakan pendaftaran berbasis lokasi saat ini (./sw.js) 
-          // untuk memastikan origin match di lingkungan hosting dinamis
           navigator.serviceWorker.register('./sw.js')
             .then(reg => console.log('SW registered successfully', reg.scope))
             .catch(err => {
-              console.warn('SW registration failed (expected in some dev environments):', err.message);
+              console.warn('SW registration failed:', err.message);
             });
         });
       }
