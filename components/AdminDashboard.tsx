@@ -1,6 +1,7 @@
 
 import React, { useState, useMemo } from 'react';
 import { Settings, User, UserRole, Citizen, JimpitanRecord, Meeting, Attendance } from '../types';
+import { supabase, isConfigured } from '../supabase';
 
 interface AdminDashboardProps {
   settings: Settings;
@@ -8,7 +9,6 @@ interface AdminDashboardProps {
   users: User[];
   setUsers: React.Dispatch<React.SetStateAction<User[]>>;
   citizens: Citizen[];
-  // Fixed: Corrected the type definition for setCitizens which had an extra closing bracket and type usage error
   setCitizens: React.Dispatch<React.SetStateAction<Citizen[]>>;
   jimpitanData: JimpitanRecord[];
   meetings: Meeting[];
@@ -29,6 +29,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [selectedCitizenId, setSelectedCitizenId] = useState<string | null>(null);
   const [editMode, setEditMode] = useState<{ type: 'citizen' | 'regu', id: string } | null>(null);
   const [newReguName, setNewReguName] = useState('');
+  const [isResetting, setIsResetting] = useState(false);
   
   // State filter download
   const [downloadPeriod, setDownloadPeriod] = useState<'all' | 'month' | 'year'>('all');
@@ -45,12 +46,48 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
     return { totalCollected, totalJimpitan, totalSavings };
   }, [jimpitanData]);
 
+  const handleResetData = async () => {
+    const confirm1 = confirm("PERINGATAN KRITIKAL: Apakah Anda yakin ingin menghapus SELURUH data? Tindakan ini tidak dapat dibatalkan.");
+    if (!confirm1) return;
+
+    const confirm2 = confirm("KONFIRMASI TERAKHIR: Seluruh data Jimpitan, Tabungan, Absensi, Rapat, dan Daftar Warga akan hilang permanen. Lanjutkan?");
+    if (!confirm2) return;
+
+    setIsResetting(true);
+    try {
+      if (isConfigured) {
+        // Hapus data di Cloud Supabase
+        await Promise.all([
+          supabase.from('jimpitan_records').delete().neq('id', '0'),
+          supabase.from('attendances').delete().neq('id', '0'),
+          supabase.from('meetings').delete().neq('id', '0'),
+          supabase.from('citizens').delete().neq('id', '0'),
+          supabase.from('users_app').delete().eq('role', UserRole.WARGA)
+        ]);
+      }
+
+      // Reset Local State
+      setCitizens([]);
+      setMeetings([]);
+      setAttendances([]);
+      setUsers(users.filter(u => u.role !== UserRole.WARGA));
+      
+      // Catatan: jimpitanData biasanya datang dari props yang di-sync di App.tsx
+      // Kita asumsikan sinkronisasi realtime Supabase akan membersihkan ini, 
+      // namun untuk UX instan kita bisa reload atau memicu re-fetch di App.
+      window.location.reload(); 
+    } catch (error) {
+      alert("Gagal mereset data. Periksa koneksi internet.");
+    } finally {
+      setIsResetting(false);
+    }
+  };
+
   const downloadOverviewCSV = () => {
     const now = new Date();
     const currentMonth = now.getMonth();
     const currentYear = now.getFullYear();
 
-    // Filter data berdasarkan periode
     const filteredData = jimpitanData.filter(item => {
       const d = new Date(item.date);
       if (downloadPeriod === 'month') return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
@@ -58,7 +95,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
       return true;
     });
 
-    // Hitung agregat per warga
     let reportList = sortedCitizens.map(c => {
       const history = filteredData.filter(j => j.citizenId === c.id);
       const jTotal = history.reduce((s, r) => s + r.jimpitanPortion, 0);
@@ -66,12 +102,10 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
       return { ...c, jTotal, sTotal, total: jTotal + sTotal };
     });
 
-    // Sortir berdasarkan kriteria
     if (sortCriteria === 'jimpitan_desc') reportList.sort((a, b) => b.jTotal - a.jTotal);
     else if (sortCriteria === 'jimpitan_asc') reportList.sort((a, b) => a.jTotal - b.jTotal);
     else if (sortCriteria === 'savings_desc') reportList.sort((a, b) => b.sTotal - a.sTotal);
     else if (sortCriteria === 'savings_asc') reportList.sort((a, b) => a.sTotal - b.sTotal);
-    // 'order' menggunakan urutan default sortedCitizens yang sudah dipetakan
 
     let csv = `REKAPITULASI JIMPITAN WARGA\nDesa: ${settings.villageName}\nPeriode: ${downloadPeriod.toUpperCase()}\n\n`;
     csv += "Urutan,Nama Warga,Total Jimpitan,Total Tabungan,Total Keseluruhan\n";
@@ -114,7 +148,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
     return groups;
   }, [attendances, users]);
 
-  // Regu Management
   const handleAddRegu = (e: React.FormEvent) => {
     e.preventDefault();
     const id = Date.now().toString();
@@ -141,7 +174,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }
   };
 
-  // Citizen Management
   const handleAddCitizen = (e: React.FormEvent) => {
     e.preventDefault();
     const form = e.target as HTMLFormElement;
@@ -224,7 +256,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </div>
               <div>
                 <label className="text-[10px] font-bold text-slate-400 uppercase">Urutkan Berdasarkan</label>
-                <select value={sortCriteria} onChange={e => setDownloadPeriod(e.target.value as any)} className="w-full mt-1 border rounded-lg px-3 py-2 text-sm">
+                <select value={sortCriteria} onChange={e => setSortCriteria(e.target.value as any)} className="w-full mt-1 border rounded-lg px-3 py-2 text-sm">
                   <option value="order">Urutan Warga (Default)</option>
                   <option value="jimpitan_desc">Jimpitan Terbanyak</option>
                   <option value="jimpitan_asc">Jimpitan Terendah</option>
@@ -492,12 +524,33 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
       )}
 
       {activeTab === 'settings' && (
-        <div className="max-w-xl mx-auto bg-white p-8 rounded-2xl shadow-sm border space-y-6">
-          <h3 className="text-xl font-bold">Pengaturan Lingkungan</h3>
-          <div className="space-y-4">
-            <div><label className="text-xs font-bold text-slate-400">Nama RT/RW/Desa</label><input value={settings.villageName} onChange={e => setSettings({...settings, villageName: e.target.value})} className="w-full px-4 py-2 border rounded-xl" /></div>
-            <div><label className="text-xs font-bold text-slate-400">Alamat</label><textarea value={settings.address} onChange={e => setSettings({...settings, address: e.target.value})} className="w-full px-4 py-2 border rounded-xl" /></div>
-            <div><label className="text-xs font-bold text-slate-400">Nominal Jimpitan Kas (Rp)</label><input type="number" value={settings.jimpitanNominal} onChange={e => setSettings({...settings, jimpitanNominal: parseInt(e.target.value) || 0})} className="w-full px-4 py-2 border rounded-xl font-bold text-blue-600" /></div>
+        <div className="max-w-xl mx-auto space-y-6">
+          <div className="bg-white p-8 rounded-2xl shadow-sm border space-y-6">
+            <h3 className="text-xl font-bold">Pengaturan Lingkungan</h3>
+            <div className="space-y-4">
+              <div><label className="text-xs font-bold text-slate-400">Nama RT/RW/Desa</label><input value={settings.villageName} onChange={e => setSettings({...settings, villageName: e.target.value})} className="w-full px-4 py-2 border rounded-xl" /></div>
+              <div><label className="text-xs font-bold text-slate-400">Alamat</label><textarea value={settings.address} onChange={e => setSettings({...settings, address: e.target.value})} className="w-full px-4 py-2 border rounded-xl" /></div>
+              <div><label className="text-xs font-bold text-slate-400">Nominal Jimpitan Kas (Rp)</label><input type="number" value={settings.jimpitanNominal} onChange={e => setSettings({...settings, jimpitanNominal: parseInt(e.target.value) || 0})} className="w-full px-4 py-2 border rounded-xl font-bold text-blue-600" /></div>
+            </div>
+          </div>
+
+          <div className="bg-red-50 p-8 rounded-2xl shadow-sm border border-red-100 space-y-4">
+            <div className="flex items-center gap-3">
+               <div className="p-2 bg-red-100 rounded-lg">
+                 <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                 </svg>
+               </div>
+               <h3 className="text-xl font-bold text-red-800">Zona Bahaya</h3>
+            </div>
+            <p className="text-sm text-red-600">Menghapus seluruh data aplikasi (Warga, Jimpitan, Absensi, Rapat). Gunakan fitur ini hanya jika ingin memulai periode baru atau membersihkan database.</p>
+            <button 
+              onClick={handleResetData}
+              disabled={isResetting}
+              className={`w-full ${isResetting ? 'bg-red-400' : 'bg-red-600 hover:bg-red-700'} text-white font-bold py-3 rounded-xl shadow-lg transition-all flex items-center justify-center gap-2`}
+            >
+              {isResetting ? 'Sedang Menghapus...' : 'RESET SELURUH DATA'}
+            </button>
           </div>
         </div>
       )}
