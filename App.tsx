@@ -22,8 +22,12 @@ import ReguDashboard from './components/ReguDashboard';
 import WargaDashboard from './components/WargaDashboard';
 import Navbar from './components/Navbar';
 
+// Inisialisasi Channel untuk sinkronisasi antar tab/perangkat di browser yang sama
+const syncChannel = new BroadcastChannel('jimpitan_sync_channel');
+
 const App: React.FC = () => {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
+  
   const [users, setUsers] = useState<User[]>(() => {
     const saved = localStorage.getItem('jimpitan_users');
     return saved ? JSON.parse(saved) : INITIAL_USERS;
@@ -49,6 +53,25 @@ const App: React.FC = () => {
     return saved ? JSON.parse(saved) : [];
   });
 
+  // Mendengarkan perubahan dari perangkat/tab lain
+  useEffect(() => {
+    const handleSync = (event: MessageEvent) => {
+      const { type, data } = event.data;
+      if (type === 'SYNC_ALL') {
+        if (data.users) setUsers(data.users);
+        if (data.settings) setSettings(data.settings);
+        if (data.citizens) setCitizens(data.citizens);
+        if (data.jimpitanData) setJimpitanData(data.jimpitanData);
+        if (data.meetings) setMeetings(data.meetings);
+        if (data.attendances) setAttendances(data.attendances);
+      }
+    };
+
+    syncChannel.onmessage = handleSync;
+    return () => { syncChannel.onmessage = null; };
+  }, []);
+
+  // Menyimpan data ke LocalStorage dan menyiarkan ke channel sync
   useEffect(() => {
     localStorage.setItem('jimpitan_users', JSON.stringify(users));
     localStorage.setItem('jimpitan_settings', JSON.stringify(settings));
@@ -56,6 +79,12 @@ const App: React.FC = () => {
     localStorage.setItem('jimpitan_records', JSON.stringify(jimpitanData));
     localStorage.setItem('jimpitan_meetings', JSON.stringify(meetings));
     localStorage.setItem('jimpitan_attendances', JSON.stringify(attendances));
+
+    // Kirim sinyal update
+    syncChannel.postMessage({
+      type: 'SYNC_ALL',
+      data: { users, settings, citizens, jimpitanData, meetings, attendances }
+    });
   }, [users, settings, citizens, jimpitanData, meetings, attendances]);
 
   const handleLogout = () => setCurrentUser(null);
@@ -113,7 +142,7 @@ const App: React.FC = () => {
         )}
       </main>
 
-      <footer className="py-6 text-center text-slate-400 text-xs font-medium">
+      <footer className="py-6 text-center text-slate-400 text-xs font-medium uppercase tracking-widest">
         aplikasi dibuat oleh YUSAPEDIA 2026
       </footer>
     </div>
