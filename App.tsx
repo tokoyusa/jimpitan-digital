@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   User, 
   UserRole, 
@@ -14,6 +14,7 @@ import {
   DEFAULT_SETTINGS, 
   INITIAL_CITIZENS 
 } from './constants';
+import { supabase } from './supabase';
 
 // Views
 import LoginView from './components/LoginView';
@@ -22,72 +23,120 @@ import ReguDashboard from './components/ReguDashboard';
 import WargaDashboard from './components/WargaDashboard';
 import Navbar from './components/Navbar';
 
-// Inisialisasi Channel untuk sinkronisasi antar tab/perangkat di browser yang sama
-const syncChannel = new BroadcastChannel('jimpitan_sync_channel');
-
 const App: React.FC = () => {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
   
-  const [users, setUsers] = useState<User[]>(() => {
-    const saved = localStorage.getItem('jimpitan_users');
-    return saved ? JSON.parse(saved) : INITIAL_USERS;
-  });
-  const [settings, setSettings] = useState<Settings>(() => {
-    const saved = localStorage.getItem('jimpitan_settings');
-    return saved ? JSON.parse(saved) : DEFAULT_SETTINGS;
-  });
-  const [citizens, setCitizens] = useState<Citizen[]>(() => {
-    const saved = localStorage.getItem('jimpitan_citizens');
-    return saved ? JSON.parse(saved) : INITIAL_CITIZENS;
-  });
-  const [jimpitanData, setJimpitanData] = useState<JimpitanRecord[]>(() => {
-    const saved = localStorage.getItem('jimpitan_records');
-    return saved ? JSON.parse(saved) : [];
-  });
-  const [meetings, setMeetings] = useState<Meeting[]>(() => {
-    const saved = localStorage.getItem('jimpitan_meetings');
-    return saved ? JSON.parse(saved) : [];
-  });
-  const [attendances, setAttendances] = useState<Attendance[]>(() => {
-    const saved = localStorage.getItem('jimpitan_attendances');
-    return saved ? JSON.parse(saved) : [];
-  });
+  const [users, setUsers] = useState<User[]>(INITIAL_USERS);
+  const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
+  const [citizens, setCitizens] = useState<Citizen[]>(INITIAL_CITIZENS);
+  const [jimpitanData, setJimpitanData] = useState<JimpitanRecord[]>([]);
+  const [meetings, setMeetings] = useState<Meeting[]>([]);
+  const [attendances, setAttendances] = useState<Attendance[]>([]);
 
-  // Mendengarkan perubahan dari perangkat/tab lain
+  // Mengecek apakah koneksi Supabase asli (bukan placeholder)
+  const isSupabaseConfigured = process.env.VITE_SUPABASE_URL && process.env.VITE_SUPABASE_URL !== 'https://placeholder-project.supabase.co';
+
+  const fetchData = async () => {
+    if (!isSupabaseConfigured) {
+      console.warn("Supabase belum dikonfigurasi. Menggunakan data statis.");
+      setIsLoading(false);
+      return;
+    }
+
+    try {
+      const { data: sData } = await supabase.from('settings').select('*').single();
+      if (sData) setSettings({
+        villageName: sData.village_name,
+        address: sData.address,
+        jimpitanNominal: sData.jimpitan_nominal
+      });
+
+      const { data: uData } = await supabase.from('users').select('*');
+      if (uData && uData.length > 0) setUsers(uData.map((u: any) => ({
+        id: u.id,
+        username: u.username,
+        password: u.password,
+        role: u.role as UserRole,
+        reguName: u.regu_name
+      })));
+
+      const { data: cData } = await supabase.from('citizens').select('*').order('display_order', { ascending: true });
+      if (cData && cData.length > 0) setCitizens(cData.map((c: any) => ({
+        id: c.id,
+        name: c.name,
+        reguId: c.regu_id,
+        displayOrder: c.display_order
+      })));
+
+      const { data: jData } = await supabase.from('jimpitan_records').select('*').order('date', { ascending: false });
+      if (jData) setJimpitanData(jData.map((j: any) => ({
+        id: j.id,
+        citizenId: j.citizen_id,
+        citizenName: j.citizen_name,
+        amount: j.amount,
+        jimpitanPortion: j.jimpitan_portion,
+        savingsPortion: j.savings_portion,
+        date: j.date,
+        reguName: j.regu_name,
+        isSent: j.is_sent,
+        isSaved: true
+      })));
+
+      const { data: mData } = await supabase.from('meetings').select('*').order('date', { ascending: false });
+      if (mData) setMeetings(mData.map((m: any) => ({
+        id: m.id,
+        agenda: m.agenda,
+        date: m.date,
+        minutesNumber: m.minutes_number,
+        notes: m.notes
+      })));
+
+      const { data: aData } = await supabase.from('attendances').select('*');
+      if (aData) setAttendances(aData.map((a: any) => ({
+        id: a.id,
+        meetingId: a.meeting_id,
+        citizenId: a.citizen_id,
+        status: a.status,
+        reason: a.reason,
+        date: a.date,
+        reguId: a.regu_id
+      })));
+    } catch (error) {
+      console.error("Gagal sinkronisasi data:", error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   useEffect(() => {
-    const handleSync = (event: MessageEvent) => {
-      const { type, data } = event.data;
-      if (type === 'SYNC_ALL') {
-        if (data.users) setUsers(data.users);
-        if (data.settings) setSettings(data.settings);
-        if (data.citizens) setCitizens(data.citizens);
-        if (data.jimpitanData) setJimpitanData(data.jimpitanData);
-        if (data.meetings) setMeetings(data.meetings);
-        if (data.attendances) setAttendances(data.attendances);
-      }
-    };
+    fetchData();
+    
+    if (isSupabaseConfigured) {
+      const channels = supabase.channel('schema-db-changes')
+        .on('postgres_changes', { event: '*', schema: 'public' }, () => {
+          fetchData();
+        })
+        .subscribe();
 
-    syncChannel.onmessage = handleSync;
-    return () => { syncChannel.onmessage = null; };
-  }, []);
-
-  // Menyimpan data ke LocalStorage dan menyiarkan ke channel sync
-  useEffect(() => {
-    localStorage.setItem('jimpitan_users', JSON.stringify(users));
-    localStorage.setItem('jimpitan_settings', JSON.stringify(settings));
-    localStorage.setItem('jimpitan_citizens', JSON.stringify(citizens));
-    localStorage.setItem('jimpitan_records', JSON.stringify(jimpitanData));
-    localStorage.setItem('jimpitan_meetings', JSON.stringify(meetings));
-    localStorage.setItem('jimpitan_attendances', JSON.stringify(attendances));
-
-    // Kirim sinyal update
-    syncChannel.postMessage({
-      type: 'SYNC_ALL',
-      data: { users, settings, citizens, jimpitanData, meetings, attendances }
-    });
-  }, [users, settings, citizens, jimpitanData, meetings, attendances]);
+      return () => {
+        supabase.removeChannel(channels);
+      };
+    }
+  }, [isSupabaseConfigured]);
 
   const handleLogout = () => setCurrentUser(null);
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-blue-50">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+          <p className="mt-4 text-slate-600 font-medium">Menghubungkan ke Cloud...</p>
+        </div>
+      </div>
+    );
+  }
 
   if (!currentUser) {
     return <LoginView users={users} onLogin={setCurrentUser} />;
@@ -97,11 +146,26 @@ const App: React.FC = () => {
     <div className="min-h-screen bg-slate-50 flex flex-col">
       <Navbar user={currentUser} onLogout={handleLogout} villageName={settings.villageName} />
       
+      {!isSupabaseConfigured && (
+        <div className="bg-amber-100 text-amber-800 text-[10px] py-1 text-center font-bold uppercase">
+          Mode Offline: Environment Variables Supabase Belum Diatur di Vercel
+        </div>
+      )}
+
       <main className="flex-grow max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-6 w-full">
         {currentUser.role === UserRole.ADMIN && (
           <AdminDashboard 
             settings={settings}
-            setSettings={setSettings}
+            setSettings={async (s) => {
+               setSettings(s);
+               if (isSupabaseConfigured) {
+                 await supabase.from('settings').update({
+                   village_name: s.villageName,
+                   address: s.address,
+                   jimpitan_nominal: s.jimpitanNominal
+                 }).eq('id', 1);
+               }
+            }}
             users={users}
             setUsers={setUsers}
             citizens={citizens}
