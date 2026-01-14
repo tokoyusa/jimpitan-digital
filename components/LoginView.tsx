@@ -12,12 +12,15 @@ const LoginView: React.FC<LoginViewProps> = ({ users, onLogin }) => {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
 
+  // Perintah: Hanya menampilkan ADMIN dan REGU pada dropdown, menyembunyikan WARGA
   const filteredUsersForDropdown = useMemo(() => {
-    return users.filter(u => u.role === UserRole.ADMIN || u.role === UserRole.REGU || u.role === UserRole.WARGA);
+    return users.filter(u => u.role === UserRole.ADMIN || u.role === UserRole.REGU);
   }, [users]);
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
+    // Proses login tetap mendukung WARGA jika mereka mengetik/input manual (opsional), 
+    // namun di UI ini hanya menggunakan select yang dibatasi.
     const user = users.find(u => u.username === username && u.password === password);
     if (user) {
       onLogin(user);
@@ -42,7 +45,7 @@ const LoginView: React.FC<LoginViewProps> = ({ users, onLogin }) => {
 
         <form onSubmit={handleLogin} className="space-y-6">
           <div>
-            <label className="block text-sm font-semibold text-slate-700 mb-1">Nama / Regu / Warga</label>
+            <label className="block text-sm font-semibold text-slate-700 mb-1">Pilih Akun (Admin / Regu)</label>
             <div className="relative">
               <select
                 value={username}
@@ -86,7 +89,7 @@ const LoginView: React.FC<LoginViewProps> = ({ users, onLogin }) => {
             <div className="bg-slate-50 p-2 rounded">
               <p>Admin: <strong>admin</strong> / Pass: <strong>password123</strong></p>
               <p className="mt-1 text-blue-600">Regu Baru: Password default <strong>regu123</strong></p>
-              <p className="text-emerald-600">Warga: Login menggunakan <strong>Nama Warga</strong> / Pass: <strong>warga123</strong></p>
+              <p className="mt-1 text-slate-400 italic">* Akun Warga tidak ditampilkan di dropdown demi keamanan.</p>
             </div>
           </div>
         </div>
