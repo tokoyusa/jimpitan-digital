@@ -1,70 +1,38 @@
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.7';
 
-// Gunakan environment variables di Vercel/Hosting
+// Mengambil URL dan Key dari Environment Variables (Vite/ESM style)
 const supabaseUrl = (import.meta as any).env?.VITE_SUPABASE_URL || '';
 const supabaseAnonKey = (import.meta as any).env?.VITE_SUPABASE_ANON_KEY || '';
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+/**
+ * Cek apakah konfigurasi sudah tersedia.
+ * Jika string kosong, kita tidak boleh memanggil createClient dengan argumen tersebut 
+ * karena akan memicu "Uncaught Error: supabaseUrl is required".
+ */
+export const isConfigured = supabaseUrl !== '' && supabaseAnonKey !== '';
 
-/* 
-  STRUKTUR SQL UNTUK SUPABASE (Jalankan di SQL Editor Supabase):
+/**
+ * Inisialisasi client Supabase dengan pengamanan.
+ * Jika belum dikonfigurasi, kita gunakan placeholder yang valid secara sintaksis 
+ * agar tidak crash saat inisialisasi modul.
+ */
+const placeholderUrl = 'https://placeholder-project.supabase.co';
+const placeholderKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.dummy';
 
-  -- Tabel Settings
-  CREATE TABLE settings (
-    id SERIAL PRIMARY KEY,
-    village_name TEXT,
-    address TEXT,
-    jimpitan_nominal INTEGER
-  );
+export const supabase = createClient(
+  isConfigured ? supabaseUrl : placeholderUrl,
+  isConfigured ? supabaseAnonKey : placeholderKey
+);
 
-  -- Tabel Users
-  CREATE TABLE users (
-    id TEXT PRIMARY KEY,
-    username TEXT UNIQUE,
-    password TEXT,
-    role TEXT,
-    regu_name TEXT
-  );
-
-  -- Tabel Citizens
-  CREATE TABLE citizens (
-    id TEXT PRIMARY KEY,
-    name TEXT,
-    regu_id TEXT REFERENCES users(id),
-    display_order INTEGER
-  );
-
-  -- Tabel Jimpitan Records
-  CREATE TABLE jimpitan_records (
-    id TEXT PRIMARY KEY,
-    citizen_id TEXT REFERENCES citizens(id),
-    citizen_name TEXT,
-    amount INTEGER,
-    jimpitan_portion INTEGER,
-    savings_portion INTEGER,
-    date DATE,
-    regu_name TEXT,
-    is_sent BOOLEAN DEFAULT false
-  );
-
-  -- Tabel Meetings
-  CREATE TABLE meetings (
-    id TEXT PRIMARY KEY,
-    agenda TEXT,
-    date DATE,
-    minutes_number TEXT,
-    notes TEXT
-  );
-
-  -- Tabel Attendances
-  CREATE TABLE attendances (
-    id TEXT PRIMARY KEY,
-    meeting_id TEXT,
-    citizen_id TEXT,
-    status TEXT,
-    reason TEXT,
-    date DATE,
-    regu_id TEXT
-  );
-*/
+/**
+ * Helper untuk mengambil data awal dari Supabase.
+ * Method ini hanya akan dipanggil jika isConfigured bernilai true di App.tsx.
+ */
+export const db = {
+  getSettings: () => supabase.from('settings').select('*').single(),
+  getCitizens: () => supabase.from('citizens').select('*').order('display_order', { ascending: true }),
+  getJimpitan: () => supabase.from('jimpitan_records').select('*').order('date', { ascending: false }),
+  getMeetings: () => supabase.from('meetings').select('*').order('date', { ascending: false }),
+  getAttendances: () => supabase.from('attendances').select('*').order('created_at', { ascending: false }),
+};
