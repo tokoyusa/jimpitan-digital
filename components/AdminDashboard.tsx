@@ -46,37 +46,37 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
   }, [jimpitanData]);
 
   const handleResetData = async () => {
-    const confirm1 = confirm("PERINGATAN KRITIKAL: Apakah Anda yakin ingin menghapus SELURUH data? Tindakan ini tidak dapat dibatalkan.");
+    const confirm1 = confirm("PERINGATAN: Hapus SELURUH data? (Warga, Jimpitan, Absensi, Rapat).");
     if (!confirm1) return;
 
-    const confirm2 = confirm("KONFIRMASI TERAKHIR: Seluruh data Jimpitan, Tabungan, Absensi, Rapat, dan Daftar Warga akan hilang permanen. Lanjutkan?");
+    const confirm2 = confirm("KONFIRMASI TERAKHIR: Data akan hilang permanen!");
     if (!confirm2) return;
 
     setIsResetting(true);
     try {
       if (isConfigured) {
-        // Hapus SEMUA data dari database cloud dengan kriteria yang mencakup semua baris
-        await Promise.all([
-          supabase.from('jimpitan_records').delete().neq('id', '___non_existent_id___'),
-          supabase.from('attendances').delete().neq('id', '___non_existent_id___'),
-          supabase.from('meetings').delete().neq('id', '___non_existent_id___'),
-          supabase.from('citizens').delete().neq('id', '___non_existent_id___'),
-          supabase.from('users_app').delete().eq('role', UserRole.WARGA)
-        ]);
+        // Menghapus data dengan urutan yang benar (child table dulu) untuk menghindari Foreign Key error
+        // Gunakan filter yang pasti mengenai semua data
+        await supabase.from('jimpitan_records').delete().neq('id', '___');
+        await supabase.from('attendances').delete().neq('id', '___');
+        await supabase.from('meetings').delete().neq('id', '___');
+        await supabase.from('citizens').delete().neq('id', '___');
+        await supabase.from('users_app').delete().eq('role', UserRole.WARGA);
+        
+        // Opsional: Reset password regu kembali ke default jika diinginkan, atau biarkan tetap ada
       }
 
-      // Reset state lokal secara instan
+      // Reset state lokal
       setCitizens([]);
       setMeetings([]);
       setAttendances([]);
-      setUsers(users.filter(u => u.role !== UserRole.WARGA));
+      setUsers(prev => prev.filter(u => u.role !== UserRole.WARGA));
       
-      alert("Seluruh data berhasil dihapus permanen.");
-      // Reload halaman untuk memastikan semua cache lokal bersih dan sinkronisasi dimulai dari nol
+      alert("Database telah dibersihkan.");
       window.location.reload(); 
     } catch (error) {
       console.error("Reset Error:", error);
-      alert("Gagal mereset data. Periksa koneksi internet.");
+      alert("Gagal mereset. Pastikan koneksi internet stabil.");
     } finally {
       setIsResetting(false);
     }
