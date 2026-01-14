@@ -14,7 +14,7 @@ import {
   DEFAULT_SETTINGS, 
   INITIAL_CITIZENS 
 } from './constants';
-import { supabase } from './supabase';
+import { supabase, isConfigured } from './supabase';
 
 // Views
 import LoginView from './components/LoginView';
@@ -34,12 +34,9 @@ const App: React.FC = () => {
   const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [attendances, setAttendances] = useState<Attendance[]>([]);
 
-  // Logika pengecekan yang lebih kuat untuk environment variable
-  const isSupabaseConfigured = !!(process.env.VITE_SUPABASE_URL && process.env.VITE_SUPABASE_URL.includes('supabase.co'));
-
   const fetchData = async () => {
-    if (!isSupabaseConfigured) {
-      console.warn("Koneksi Supabase tidak terdeteksi atau URL tidak valid.");
+    if (!isConfigured) {
+      console.warn("Koneksi Supabase tidak terdeteksi. Menggunakan data lokal.");
       setIsLoading(false);
       return;
     }
@@ -112,7 +109,7 @@ const App: React.FC = () => {
   useEffect(() => {
     fetchData();
     
-    if (isSupabaseConfigured) {
+    if (isConfigured) {
       const channels = supabase.channel('schema-db-changes')
         .on('postgres_changes', { event: '*', schema: 'public' }, () => {
           fetchData();
@@ -123,7 +120,7 @@ const App: React.FC = () => {
         supabase.removeChannel(channels);
       };
     }
-  }, [isSupabaseConfigured]);
+  }, []);
 
   const handleLogout = () => setCurrentUser(null);
 
@@ -146,9 +143,9 @@ const App: React.FC = () => {
     <div className="min-h-screen bg-slate-50 flex flex-col">
       <Navbar user={currentUser} onLogout={handleLogout} villageName={settings.villageName} />
       
-      {!isSupabaseConfigured && (
-        <div className="bg-amber-100 text-amber-800 text-[10px] py-1 text-center font-bold uppercase">
-          Mode Offline: Environment Variables Supabase Belum Terbaca
+      {!isConfigured && (
+        <div className="bg-amber-100 text-amber-800 text-[10px] py-1 text-center font-bold uppercase tracking-widest">
+          Mode Offline: Cek Variabel VITE_SUPABASE_URL & VITE_SUPABASE_ANON_KEY di Vercel
         </div>
       )}
 
@@ -158,7 +155,7 @@ const App: React.FC = () => {
             settings={settings}
             setSettings={async (s) => {
                setSettings(s);
-               if (isSupabaseConfigured) {
+               if (isConfigured) {
                  await supabase.from('settings').update({
                    village_name: s.villageName,
                    address: s.address,
