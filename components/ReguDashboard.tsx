@@ -115,7 +115,8 @@ const ReguDashboard: React.FC<ReguDashboardProps> = ({
     const newAtt: Attendance[] = entries.map(([cid, data]) => {
       const attendanceData = data as { status: 'HADIR' | 'TIDAK_HADIR' | 'IZIN', reason?: string };
       return {
-        id: `att-${jimpitanDate}-${cid}`,
+        // Gunakan ID unik yang stabil agar logika 'menimpa' di App.tsx berjalan
+        id: `att-${jimpitanDate}-${cid}`, 
         meetingId: 'ronda-harian',
         citizenId: cid,
         status: attendanceData.status,
@@ -125,15 +126,20 @@ const ReguDashboard: React.FC<ReguDashboardProps> = ({
       };
     });
 
-    // Fix: Using setAttendances from props which handles Supabase sync in App.tsx
-    await setAttendances(prev => {
-      const newAttIds = new Set(newAtt.map(a => `${a.date}-${a.citizenId}`));
-      const filteredPrev = prev.filter(p => !newAttIds.has(`${p.date}-${p.citizenId}`));
-      return [...filteredPrev, ...newAtt];
-    });
-
-    setTempAttendance({});
-    alert('Absensi ronda berhasil dikirim ke Admin.');
+    // Kirim ke fungsi sinkronisasi di App.tsx
+    try {
+      await setAttendances(prev => {
+        // Hapus entri lama dengan tanggal & warga yang sama (Upsert manual logic)
+        const newKeys = new Set(newAtt.map(a => `${a.date}-${a.citizenId}`));
+        const filteredPrev = prev.filter(p => !newKeys.has(`${p.date}-${p.citizenId}`));
+        return [...filteredPrev, ...newAtt];
+      });
+      setTempAttendance({});
+      alert('Absensi ronda berhasil dikirim ke Admin.');
+    } catch (err) {
+      console.error(err);
+      alert('Gagal mengirim absensi. Pastikan koneksi stabil.');
+    }
   };
 
   return (
