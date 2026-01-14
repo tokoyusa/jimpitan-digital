@@ -31,7 +31,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [newReguName, setNewReguName] = useState('');
   const [isResetting, setIsResetting] = useState(false);
   
-  // State filter download
   const [downloadPeriod, setDownloadPeriod] = useState<'all' | 'month' | 'year'>('all');
   const [sortCriteria, setSortCriteria] = useState<'order' | 'jimpitan_desc' | 'jimpitan_asc' | 'savings_desc' | 'savings_asc'>('order');
 
@@ -56,27 +55,27 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
     setIsResetting(true);
     try {
       if (isConfigured) {
-        // Hapus data di Cloud Supabase
+        // Hapus SEMUA data dari database cloud dengan kriteria yang mencakup semua baris
         await Promise.all([
-          supabase.from('jimpitan_records').delete().neq('id', '0'),
-          supabase.from('attendances').delete().neq('id', '0'),
-          supabase.from('meetings').delete().neq('id', '0'),
-          supabase.from('citizens').delete().neq('id', '0'),
+          supabase.from('jimpitan_records').delete().neq('id', '___non_existent_id___'),
+          supabase.from('attendances').delete().neq('id', '___non_existent_id___'),
+          supabase.from('meetings').delete().neq('id', '___non_existent_id___'),
+          supabase.from('citizens').delete().neq('id', '___non_existent_id___'),
           supabase.from('users_app').delete().eq('role', UserRole.WARGA)
         ]);
       }
 
-      // Reset Local State
+      // Reset state lokal secara instan
       setCitizens([]);
       setMeetings([]);
       setAttendances([]);
       setUsers(users.filter(u => u.role !== UserRole.WARGA));
       
-      // Catatan: jimpitanData biasanya datang dari props yang di-sync di App.tsx
-      // Kita asumsikan sinkronisasi realtime Supabase akan membersihkan ini, 
-      // namun untuk UX instan kita bisa reload atau memicu re-fetch di App.
+      alert("Seluruh data berhasil dihapus permanen.");
+      // Reload halaman untuk memastikan semua cache lokal bersih dan sinkronisasi dimulai dari nol
       window.location.reload(); 
     } catch (error) {
+      console.error("Reset Error:", error);
       alert("Gagal mereset data. Periksa koneksi internet.");
     } finally {
       setIsResetting(false);
@@ -87,33 +86,27 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
     const now = new Date();
     const currentMonth = now.getMonth();
     const currentYear = now.getFullYear();
-
     const filteredData = jimpitanData.filter(item => {
       const d = new Date(item.date);
       if (downloadPeriod === 'month') return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
       if (downloadPeriod === 'year') return d.getFullYear() === currentYear;
       return true;
     });
-
     let reportList = sortedCitizens.map(c => {
       const history = filteredData.filter(j => j.citizenId === c.id);
       const jTotal = history.reduce((s, r) => s + r.jimpitanPortion, 0);
       const sTotal = history.reduce((s, r) => s + r.savingsPortion, 0);
       return { ...c, jTotal, sTotal, total: jTotal + sTotal };
     });
-
     if (sortCriteria === 'jimpitan_desc') reportList.sort((a, b) => b.jTotal - a.jTotal);
     else if (sortCriteria === 'jimpitan_asc') reportList.sort((a, b) => a.jTotal - b.jTotal);
     else if (sortCriteria === 'savings_desc') reportList.sort((a, b) => b.sTotal - a.sTotal);
     else if (sortCriteria === 'savings_asc') reportList.sort((a, b) => a.sTotal - b.sTotal);
-
     let csv = `REKAPITULASI JIMPITAN WARGA\nDesa: ${settings.villageName}\nPeriode: ${downloadPeriod.toUpperCase()}\n\n`;
     csv += "Urutan,Nama Warga,Total Jimpitan,Total Tabungan,Total Keseluruhan\n";
-    
     reportList.forEach((r, idx) => {
       csv += `${r.displayOrder},${r.name},${r.jTotal},${r.sTotal},${r.total}\n`;
     });
-
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -195,7 +188,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
     const name = (form.elements.namedItem('editName') as HTMLInputElement).value;
     const reguId = (form.elements.namedItem('editReguId') as HTMLSelectElement).value;
     const order = parseInt((form.elements.namedItem('editOrder') as HTMLInputElement).value) || 0;
-
     setCitizens(citizens.map(c => c.id === editMode.id ? { ...c, name, reguId: reguId || undefined, displayOrder: order } : c));
     setUsers(users.map(u => u.id === `u-${editMode.id}` ? { ...u, username: name } : u));
     setEditMode(null);
@@ -443,7 +435,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     <p className="text-emerald-700">Rp {selectedCitizenData.totalSavings.toLocaleString()}</p>
                   </div>
                 </div>
-                
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div>
                     <h4 className="font-bold text-slate-800 mb-3 text-sm uppercase">Riwayat Pembayaran</h4>
