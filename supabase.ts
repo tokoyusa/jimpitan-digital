@@ -1,10 +1,4 @@
 
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.7';
-
-/**
- * Mengambil variabel lingkungan dari global window yang disuntikkan di index.html.
- * Cara ini paling aman untuk menghindari error parsing 'import.meta' atau 'process'.
- */
 const getEnv = (key: string): string => {
   if (typeof window !== 'undefined' && (window as any).env) {
     return (window as any).env[key] || "";
@@ -15,22 +9,23 @@ const getEnv = (key: string): string => {
 const supabaseUrl = getEnv('VITE_SUPABASE_URL');
 const supabaseAnonKey = getEnv('VITE_SUPABASE_ANON_KEY');
 
-// Deteksi apakah konfigurasi valid
 export const isConfigured = 
   !!supabaseUrl && 
   supabaseUrl.length > 10 && 
-  supabaseUrl.includes('supabase.co') &&
-  !!supabaseAnonKey &&
-  supabaseAnonKey.length > 10;
+  supabaseUrl.includes('supabase.co');
 
-if (!isConfigured) {
-  console.warn("⚠️ SUPABASE OFFLINE: Menggunakan data lokal. Pastikan variabel lingkungan sudah diatur di Vercel.");
-} else {
-  console.log("✅ SUPABASE ONLINE: Koneksi berhasil.");
-}
+// Gunakan library dari window yang dimuat di index.html
+const supabaseLib = (window as any).supabase;
 
-// Inisialisasi client dengan fallback URL agar tidak menyebabkan crash jika kosong
-export const supabase = createClient(
-  isConfigured ? supabaseUrl : 'https://placeholder-project.supabase.co',
-  isConfigured ? supabaseAnonKey : 'placeholder-key'
-);
+export const supabase = isConfigured 
+  ? supabaseLib.createClient(supabaseUrl, supabaseAnonKey)
+  : { 
+      from: () => ({ 
+        select: () => ({ single: () => Promise.resolve({ data: null }), order: () => Promise.resolve({ data: [] }) }),
+        insert: () => Promise.resolve({ data: null }),
+        update: () => ({ eq: () => Promise.resolve({ data: null }) }),
+        delete: () => ({ eq: () => Promise.resolve({ data: null }) })
+      }),
+      channel: () => ({ on: () => ({ subscribe: () => ({}) }) }),
+      removeChannel: () => {}
+    } as any;

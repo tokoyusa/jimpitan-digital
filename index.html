@@ -6,56 +6,39 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>JIMPITAN DIGITAL</title>
     <script>
-      // Inisialisasi env global agar tidak error saat diakses
-      window.process = { env: {} };
+      window.process = { env: { NODE_ENV: 'production' } };
       window.env = {
         VITE_SUPABASE_URL: "<!--VITE_SUPABASE_URL-->",
         VITE_SUPABASE_ANON_KEY: "<!--VITE_SUPABASE_ANON_KEY-->"
       };
-
-      // Bersihkan placeholder jika tidak diganti oleh sistem deployment
       if (window.env.VITE_SUPABASE_URL.indexOf("!--") !== -1) {
         window.env.VITE_SUPABASE_URL = "";
         window.env.VITE_SUPABASE_ANON_KEY = "";
       }
     </script>
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <style>
-        body { font-family: 'Inter', sans-serif; margin: 0; padding: 0; }
-        #root:empty { 
-          display: flex; 
-          align-items: center; 
-          justify-content: center; 
-          height: 100vh; 
-          background: #f8fafc;
-          flex-direction: column;
-          gap: 1rem;
-        }
-        #root:empty::after {
-          content: "Sedang Menyiapkan Aplikasi...";
-          font-weight: bold;
-          color: #2563eb;
-        }
-    </style>
-    <!-- Babel standalone untuk transpilasi JSX di browser secara real-time -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    <script type="importmap">
+    <script src="https://unpkg.com/@supabase/supabase-js@2.39.7/dist/umd/supabase.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <style>
+        body { font-family: 'Inter', sans-serif; margin: 0; background: #f8fafc; }
+        #root:empty { display: flex; align-items: center; justify-content: center; height: 100vh; flex-direction: column; gap: 1rem; }
+        .spinner { width: 40px; height: 40px; border: 4px solid #e2e8f0; border-top: 4px solid #2563eb; border-radius: 50%; animation: spin 1s linear infinite; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    </style>
+<script type="importmap">
 {
   "imports": {
-    "react": "https://esm.sh/react@19.0.0",
-    "react-dom": "https://esm.sh/react-dom@19.0.0",
-    "react-dom/client": "https://esm.sh/react-dom@19.0.0/client",
-    "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
-    "react/": "https://esm.sh/react@^19.2.3/"
+    "react/": "https://esm.sh/react@^19.2.3/",
+    "react": "https://esm.sh/react@^19.2.3"
   }
 }
 </script>
 </head>
-<body class="bg-slate-50 text-slate-900">
-    <div id="root"></div>
-    <!-- Load index.tsx sebagai script babel agar JSX diproses -->
-    <script type="text/babel" data-type="module" src="index.tsx"></script>
+<body>
+    <div id="root"><div class="spinner"></div><p>Menyiapkan Sistem...</p></div>
+    <script type="text/babel" data-presets="react" src="index.tsx"></script>
 </body>
 </html>
