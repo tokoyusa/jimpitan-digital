@@ -1,0 +1,7 @@
+{
+  "name": "Jimpitan Digital RT/RW",
+  "description": "Aplikasi manajemen iuran warga (Jimpitan), Tabungan, Rapat, dan Absensi untuk lingkungan RT/RW atau Desa dengan sistem peran Admin, Regu, dan Warga.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
