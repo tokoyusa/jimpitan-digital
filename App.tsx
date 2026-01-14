@@ -27,10 +27,7 @@ const App: React.FC = () => {
   const [loading, setLoading] = useState(true);
   
   // States
-  const [users, setUsers] = useState<User[]>(() => {
-    const saved = localStorage.getItem('jimpitan_users');
-    return saved ? JSON.parse(saved) : INITIAL_USERS;
-  });
+  const [users, setUsers] = useState<User[]>(INITIAL_USERS);
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
   const [citizens, setCitizens] = useState<Citizen[]>([]);
   const [jimpitanData, setJimpitanData] = useState<JimpitanRecord[]>([]);
@@ -38,60 +35,86 @@ const App: React.FC = () => {
   const [attendances, setAttendances] = useState<Attendance[]>([]);
 
   // 1. Fetch data dari Supabase saat aplikasi dimuat
-  useEffect(() => {
-    const fetchData = async () => {
-      if (!isConfigured) {
-        setLoading(false);
-        return;
-      }
+  const loadDataFromDB = async () => {
+    if (!isConfigured) {
+      const savedUsers = localStorage.getItem('jimpitan_users');
+      if (savedUsers) setUsers(JSON.parse(savedUsers));
+      setLoading(false);
+      return;
+    }
 
-      try {
-        const [
-          { data: sData },
-          { data: cData },
-          { data: jData },
-          { data: mData },
-          { data: aData }
-        ] = await Promise.all([
-          db.getSettings(),
-          db.getCitizens(),
-          db.getJimpitan(),
-          db.getMeetings(),
-          db.getAttendances()
-        ]);
+    try {
+      const [
+        { data: sData },
+        { data: cData },
+        { data: jData },
+        { data: mData },
+        { data: aData },
+        { data: uData }
+      ] = await Promise.all([
+        db.getSettings(),
+        db.getCitizens(),
+        db.getJimpitan(),
+        db.getMeetings(),
+        db.getAttendances(),
+        supabase.from('users_app').select('*')
+      ]);
 
-        if (sData) setSettings(sData as any);
-        if (cData) setCitizens(cData as any);
-        if (jData) setJimpitanData(jData as any);
-        if (mData) setMeetings(mData as any);
-        if (aData) setAttendances(aData as any);
-      } catch (error) {
-        console.error("Error fetching database:", error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchData();
-  }, []);
-
-  // 2. Simpan users ke localStorage (User Auth tetap lokal untuk kemudahan akses demo)
-  useEffect(() => {
-    localStorage.setItem('jimpitan_users', JSON.stringify(users));
-  }, [users]);
-
-  // 3. Fungsi Sync untuk Admin (Update Database)
-  const syncSettings = async (newSettings: Settings) => {
-    setSettings(newSettings);
-    if (isConfigured) {
-      await supabase.from('settings').update(newSettings).eq('id', 'default');
+      if (sData) setSettings(sData as any);
+      if (cData) setCitizens(cData.map((c: any) => ({
+        id: c.id,
+        name: c.name,
+        reguId: c.regu_id,
+        displayOrder: c.display_order
+      })));
+      if (jData) setJimpitanData(jData as any);
+      if (mData) setMeetings(mData as any);
+      if (aData) setAttendances(aData as any);
+      if (uData && uData.length > 0) setUsers(uData as any);
+    } catch (error) {
+      console.error("Error fetching database:", error);
+    } finally {
+      setLoading(false);
     }
   };
 
-  const syncCitizens = async (newCitizens: Citizen[]) => {
+  useEffect(() => {
+    loadDataFromDB();
+  }, []);
+
+  // Sync Wrappers
+  const syncSettings = async (newSettings: Settings) => {
+    setSettings(newSettings);
+    if (isConfigured) {
+      await supabase.from('settings').upsert({
+        id: 'default',
+        village_name: newSettings.villageName,
+        address: newSettings.address,
+        jimpitan_nominal: newSettings.jimpitanNominal
+      });
+    }
+  };
+
+  const syncUsers = async (arg: User[] | ((prev: User[]) => User[])) => {
+    const newUsers = typeof arg === 'function' ? arg(users) : arg;
+    setUsers(newUsers);
+    if (isConfigured) {
+      await supabase.from('users_app').upsert(newUsers);
+    }
+  };
+
+  const syncCitizens = async (arg: Citizen[] | ((prev: Citizen[]) => Citizen[])) => {
+    const newCitizens = typeof arg === 'function' ? arg(citizens) : arg;
     setCitizens(newCitizens);
-    // Logic untuk sync citizen ke DB bisa ditambahkan di AdminDashboard.tsx 
-    // agar lebih efisien per aksi (Add/Delete)
+    if (isConfigured) {
+      const payload = newCitizens.map(c => ({
+        id: c.id,
+        name: c.name,
+        regu_id: c.reguId,
+        display_order: c.displayOrder
+      }));
+      await supabase.from('citizens').upsert(payload);
+    }
   };
 
   const handleLogout = () => setCurrentUser(null);
@@ -101,7 +124,7 @@ const App: React.FC = () => {
       <div className="min-h-screen flex items-center justify-center bg-slate-50">
         <div className="text-center">
           <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-slate-500 font-medium">Memuat Database...</p>
+          <p className="text-slate-500 font-medium tracking-widest uppercase text-[10px]">Menyinkronkan Data...</p>
         </div>
       </div>
     );
@@ -114,58 +137,55 @@ const App: React.FC = () => {
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col">
       <Navbar user={currentUser} onLogout={handleLogout} villageName={settings.villageName} />
-      
-      {!isConfigured && (
-        <div className="bg-amber-100 text-amber-800 text-[10px] text-center py-1 font-bold">
-          MODE OFFLINE: SUPABASE BELUM DIKONFIGURASI DI VERCEL
-        </div>
-      )}
-
       <main className="flex-grow max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-6 w-full">
         {currentUser.role === UserRole.ADMIN && (
           <AdminDashboard 
-            settings={settings}
-            setSettings={syncSettings}
-            users={users}
-            setUsers={setUsers}
-            citizens={citizens}
-            setCitizens={setCitizens}
+            settings={settings} setSettings={syncSettings}
+            users={users} setUsers={syncUsers}
+            citizens={citizens} setCitizens={syncCitizens}
             jimpitanData={jimpitanData}
             meetings={meetings}
-            setMeetings={setMeetings}
+            setMeetings={async (m: any) => {
+              const val = typeof m === 'function' ? m(meetings) : m;
+              setMeetings(val);
+              if(isConfigured) await supabase.from('meetings').upsert(val);
+            }}
             attendances={attendances}
-            setAttendances={setAttendances}
+            setAttendances={async (a: any) => {
+              const val = typeof a === 'function' ? a(attendances) : a;
+              setAttendances(val);
+              if(isConfigured) await supabase.from('attendances').upsert(val);
+            }}
           />
         )}
         
         {currentUser.role === UserRole.REGU && (
           <ReguDashboard 
-            user={currentUser}
-            citizens={citizens}
-            settings={settings}
+            user={currentUser} citizens={citizens} settings={settings}
             jimpitanData={jimpitanData}
-            setJimpitanData={setJimpitanData}
-            meetings={meetings}
-            attendances={attendances}
-            setAttendances={setAttendances}
-            users={users}
-            setUsers={setUsers}
+            setJimpitanData={async (val: any) => {
+              const newData = typeof val === 'function' ? val(jimpitanData) : val;
+              setJimpitanData(newData);
+              if(isConfigured) await supabase.from('jimpitan_records').upsert(newData);
+            }}
+            meetings={meetings} attendances={attendances}
+            setAttendances={async (val: any) => {
+              const newData = typeof val === 'function' ? val(attendances) : val;
+              setAttendances(newData);
+              if(isConfigured) await supabase.from('attendances').upsert(newData);
+            }}
+            users={users} setUsers={syncUsers}
           />
         )}
         
         {currentUser.role === UserRole.WARGA && (
           <WargaDashboard 
-            user={currentUser}
-            settings={settings}
-            jimpitanData={jimpitanData}
-            meetings={meetings}
-            attendances={attendances}
-            citizens={citizens}
-            setUsers={setUsers}
+            user={currentUser} settings={settings} jimpitanData={jimpitanData}
+            meetings={meetings} attendances={attendances}
+            citizens={citizens} setUsers={syncUsers}
           />
         )}
       </main>
-
       <footer className="py-6 text-center text-slate-400 text-xs font-medium uppercase tracking-widest">
         aplikasi dibuat oleh YUSAPEDIA 2026
       </footer>
