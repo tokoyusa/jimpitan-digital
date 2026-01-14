@@ -24,10 +24,17 @@ const Navbar: React.FC<NavbarProps> = ({ user, onLogout, villageName }) => {
 
   useEffect(() => {
     checkConnection();
-    // Interval lebih cepat di awal, lalu melambat
     const interval = setInterval(checkConnection, 15000);
     return () => clearInterval(interval);
   }, []);
+
+  const handleConfigReset = () => {
+    if (confirm('Atur ulang konfigurasi database?')) {
+      localStorage.removeItem('__manual_SUPABASE_URL');
+      localStorage.removeItem('__manual_SUPABASE_ANON_KEY');
+      window.location.reload();
+    }
+  };
 
   return (
     <nav className="bg-blue-700 text-white shadow-lg sticky top-0 z-50">
@@ -36,13 +43,14 @@ const Navbar: React.FC<NavbarProps> = ({ user, onLogout, villageName }) => {
           <div className="flex flex-col">
             <div className="flex items-center gap-2">
               <span className="font-bold text-lg leading-tight tracking-tight">JIMPITAN DIGITAL</span>
-              <div 
-                className={`w-3 h-3 rounded-full border-2 border-white/30 transition-colors duration-500 ${
+              <button 
+                onClick={handleConfigReset}
+                className={`w-3 h-3 rounded-full border-2 border-white/30 transition-all duration-500 cursor-help ${
                   dbStatus === 'connected' ? 'bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.8)]' : 
                   dbStatus === 'error' ? 'bg-red-500' : 
-                  dbStatus === 'offline' ? 'bg-amber-400 shadow-[0_0_10px_rgba(251,191,36,0.5)]' : 'bg-slate-400 animate-pulse'
+                  dbStatus === 'offline' ? 'bg-amber-400 shadow-[0_0_10px_rgba(251,191,36,0.6)] animate-pulse' : 'bg-slate-400 animate-pulse'
                 }`}
-                title={dbStatus === 'connected' ? 'Cloud Terkoneksi' : 'Cek Konfigurasi API'}
+                title={dbStatus === 'connected' ? 'Terhubung ke Cloud' : 'Offline/Klik untuk Config'}
               />
             </div>
             <span className="text-[10px] text-blue-200 uppercase tracking-tighter font-medium">{villageName}</span>
