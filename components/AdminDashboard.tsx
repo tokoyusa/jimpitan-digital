@@ -55,99 +55,72 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
     setIsResetting(true);
     try {
       if (isConfigured) {
-        // Menghapus data dengan urutan yang benar (child table dulu) untuk menghindari Foreign Key error
-        // Gunakan filter yang pasti mengenai semua data
-        await supabase.from('jimpitan_records').delete().neq('id', '___');
-        await supabase.from('attendances').delete().neq('id', '___');
-        await supabase.from('meetings').delete().neq('id', '___');
-        await supabase.from('citizens').delete().neq('id', '___');
+        // Hapus child data terlebih dahulu untuk menghindari error Foreign Key
+        await supabase.from('jimpitan_records').delete().neq('id', '_none_');
+        await supabase.from('attendances').delete().neq('id', '_none_');
+        await supabase.from('meetings').delete().neq('id', '_none_');
+        await supabase.from('citizens').delete().neq('id', '_none_');
         await supabase.from('users_app').delete().eq('role', UserRole.WARGA);
-        
-        // Opsional: Reset password regu kembali ke default jika diinginkan, atau biarkan tetap ada
       }
 
-      // Reset state lokal
       setCitizens([]);
       setMeetings([]);
       setAttendances([]);
       setUsers(prev => prev.filter(u => u.role !== UserRole.WARGA));
       
-      alert("Database telah dibersihkan.");
+      alert("Seluruh data berhasil dihapus!");
       window.location.reload(); 
     } catch (error) {
       console.error("Reset Error:", error);
-      alert("Gagal mereset. Pastikan koneksi internet stabil.");
+      alert("Gagal mereset data cloud. Silakan jalankan SQL schema CASCADE di dashboard Supabase.");
     } finally {
       setIsResetting(false);
     }
   };
 
-  const downloadOverviewCSV = () => {
-    const now = new Date();
-    const currentMonth = now.getMonth();
-    const currentYear = now.getFullYear();
-    const filteredData = jimpitanData.filter(item => {
-      const d = new Date(item.date);
-      if (downloadPeriod === 'month') return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
-      if (downloadPeriod === 'year') return d.getFullYear() === currentYear;
-      return true;
-    });
-    let reportList = sortedCitizens.map(c => {
-      const history = filteredData.filter(j => j.citizenId === c.id);
-      const jTotal = history.reduce((s, r) => s + r.jimpitanPortion, 0);
-      const sTotal = history.reduce((s, r) => s + r.savingsPortion, 0);
-      return { ...c, jTotal, sTotal, total: jTotal + sTotal };
-    });
-    if (sortCriteria === 'jimpitan_desc') reportList.sort((a, b) => b.jTotal - a.jTotal);
-    else if (sortCriteria === 'jimpitan_asc') reportList.sort((a, b) => a.jTotal - b.jTotal);
-    else if (sortCriteria === 'savings_desc') reportList.sort((a, b) => b.sTotal - a.sTotal);
-    else if (sortCriteria === 'savings_asc') reportList.sort((a, b) => a.sTotal - b.sTotal);
-    let csv = `REKAPITULASI JIMPITAN WARGA\nDesa: ${settings.villageName}\nPeriode: ${downloadPeriod.toUpperCase()}\n\n`;
-    csv += "Urutan,Nama Warga,Total Jimpitan,Total Tabungan,Total Keseluruhan\n";
-    reportList.forEach((r, idx) => {
-      csv += `${r.displayOrder},${r.name},${r.jTotal},${r.sTotal},${r.total}\n`;
-    });
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `Rekap_Jimpitan_${downloadPeriod}_${sortCriteria}.csv`;
-    a.click();
-  };
-
-  const moveOrder = (index: number, direction: 'up' | 'down') => {
-    const newCitizens = [...sortedCitizens];
-    if (direction === 'up' && index > 0) {
-      const temp = newCitizens[index].displayOrder;
-      newCitizens[index].displayOrder = newCitizens[index - 1].displayOrder;
-      newCitizens[index - 1].displayOrder = temp;
-    } else if (direction === 'down' && index < newCitizens.length - 1) {
-      const temp = newCitizens[index].displayOrder;
-      newCitizens[index].displayOrder = newCitizens[index + 1].displayOrder;
-      newCitizens[index + 1].displayOrder = temp;
+  const handleDeleteRegu = async (id: string) => {
+    if (confirm('Hapus regu ini? Akun login regu juga akan terhapus.')) {
+      if (isConfigured) {
+        // Update warga yang tadinya milik regu ini menjadi tanpa regu
+        await supabase.from('citizens').update({ regu_id: null }).eq('regu_id', id);
+        // Hapus user regu
+        await supabase.from('users_app').delete().eq('id', id);
+      }
+      setUsers(users.filter(u => u.id !== id));
+      setCitizens(citizens.map(c => c.reguId === id ? { ...c, reguId: undefined } : c));
+      alert('Regu dihapus.');
     }
-    setCitizens(newCitizens);
   };
 
-  const groupedAttendances = useMemo(() => {
-    const groups: Record<string, Attendance[]> = {};
-    attendances.forEach(a => {
-      const regu = users.find(u => u.id === (a as any).reguId)?.username || 'Umum';
-      const date = (a as any).date || 'Tanpa Tanggal';
-      const key = `${regu} - ${date}`;
-      if (!groups[key]) groups[key] = [];
-      groups[key].push(a);
-    });
-    return groups;
-  }, [attendances, users]);
+  const handleDeleteCitizen = async (id: string) => {
+    if (confirm('Hapus warga ini? Seluruh riwayat jimpitan & tabungannya akan ikut terhapus.')) {
+      try {
+        if (isConfigured) {
+          // Hapus history jimpitan & absensi dulu jika database belum disetting CASCADE
+          await supabase.from('jimpitan_records').delete().eq('citizen_id', id);
+          await supabase.from('attendances').delete().eq('citizen_id', id);
+          // Baru hapus warga
+          await supabase.from('citizens').delete().eq('id', id);
+          // Hapus akun warga
+          await supabase.from('users_app').delete().eq('id', `u-${id}`);
+        }
+        setCitizens(citizens.filter(c => c.id !== id));
+        setUsers(users.filter(u => u.id !== `u-${id}`));
+        alert('Data warga berhasil dihapus.');
+      } catch (err) {
+        alert('Gagal menghapus data di cloud.');
+      }
+    }
+  };
 
+  // --- Fungsi Tambah/Edit Tetap ---
   const handleAddRegu = (e: React.FormEvent) => {
     e.preventDefault();
     const id = Date.now().toString();
     const newRegu: User = { id, username: newReguName, password: 'regu123', role: UserRole.REGU, reguName: newReguName };
     setUsers([...users, newRegu]);
     setNewReguName('');
-    alert('Regu berhasil ditambah! Akun: ' + newReguName + ' / pass: regu123');
+    alert('Regu berhasil ditambah! Pass: regu123');
   };
 
   const handleEditRegu = (e: React.FormEvent) => {
@@ -158,13 +131,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
     setUsers(users.map(u => u.id === editMode.id ? { ...u, username: name, reguName: name } : u));
     setEditMode(null);
     alert('Nama regu diperbarui.');
-  };
-
-  const handleDeleteRegu = (id: string) => {
-    if (confirm('Hapus regu ini? Akun login regu juga akan terhapus.')) {
-      setUsers(users.filter(u => u.id !== id));
-      setCitizens(citizens.map(c => c.reguId === id ? { ...c, reguId: undefined } : c));
-    }
   };
 
   const handleAddCitizen = (e: React.FormEvent) => {
@@ -194,23 +160,47 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
     alert('Data warga diperbarui.');
   };
 
-  const handleDeleteCitizen = (id: string) => {
-    if (confirm('Hapus warga ini? Data akun juga akan dihapus.')) {
-      setCitizens(citizens.filter(c => c.id !== id));
-      setUsers(users.filter(u => u.id !== `u-${id}`));
+  const moveOrder = (index: number, direction: 'up' | 'down') => {
+    const newCitizens = [...sortedCitizens];
+    if (direction === 'up' && index > 0) {
+      const temp = newCitizens[index].displayOrder;
+      newCitizens[index].displayOrder = newCitizens[index - 1].displayOrder;
+      newCitizens[index - 1].displayOrder = temp;
+    } else if (direction === 'down' && index < newCitizens.length - 1) {
+      const temp = newCitizens[index].displayOrder;
+      newCitizens[index].displayOrder = newCitizens[index + 1].displayOrder;
+      newCitizens[index + 1].displayOrder = temp;
     }
+    setCitizens(newCitizens);
   };
 
-  const addMeeting = (e: React.FormEvent) => {
-    e.preventDefault();
-    const form = e.target as HTMLFormElement;
-    const agenda = (form.elements.namedItem('agenda') as HTMLInputElement).value;
-    const date = (form.elements.namedItem('meetingDate') as HTMLInputElement).value;
-    const notes = (form.elements.namedItem('notes') as HTMLTextAreaElement).value;
-    const newM: Meeting = { id: Date.now().toString(), agenda, date, notes, minutesNumber: `MTG-${Date.now()}` };
-    setMeetings([...meetings, newM]);
-    form.reset();
-    alert('Agenda rapat disimpan.');
+  const downloadOverviewCSV = () => {
+    const now = new Date();
+    const currentMonth = now.getMonth();
+    const currentYear = now.getFullYear();
+    const filteredData = jimpitanData.filter(item => {
+      const d = new Date(item.date);
+      if (downloadPeriod === 'month') return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
+      if (downloadPeriod === 'year') return d.getFullYear() === currentYear;
+      return true;
+    });
+    let reportList = sortedCitizens.map(c => {
+      const history = filteredData.filter(j => j.citizenId === c.id);
+      const jTotal = history.reduce((s, r) => s + r.jimpitanPortion, 0);
+      const sTotal = history.reduce((s, r) => s + r.savingsPortion, 0);
+      return { ...c, jTotal, sTotal, total: jTotal + sTotal };
+    });
+    let csv = `REKAPITULASI JIMPITAN WARGA\nDesa: ${settings.villageName}\n\n`;
+    csv += "Urutan,Nama Warga,Total Jimpitan,Total Tabungan,Total Keseluruhan\n";
+    reportList.forEach((r) => {
+      csv += `${r.displayOrder},${r.name},${r.jTotal},${r.sTotal},${r.total}\n`;
+    });
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `Rekap_Jimpitan.csv`;
+    a.click();
   };
 
   const selectedCitizenData = useMemo(() => {
@@ -219,8 +209,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
     if (!citizen) return null;
     const history = jimpitanData.filter(j => j.citizenId === citizen.id);
     const attHistory = attendances.filter(a => a.citizenId === citizen.id);
-    const totalSavings = history.reduce((s, r) => s + r.savingsPortion, 0);
-    return { citizen, history, attHistory, totalSavings };
+    return { citizen, history, attHistory };
   }, [selectedCitizenId, jimpitanData, attendances, citizens]);
 
   return (
@@ -235,56 +224,28 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
       {activeTab === 'overview' && (
         <div className="space-y-6">
-          <div className="bg-white p-6 rounded-2xl shadow-sm border space-y-4">
-            <h3 className="font-bold text-lg">Download Laporan Berdasarkan Urutan Warga</h3>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div>
-                <label className="text-[10px] font-bold text-slate-400 uppercase">Periode</label>
-                <select value={downloadPeriod} onChange={e => setDownloadPeriod(e.target.value as any)} className="w-full mt-1 border rounded-lg px-3 py-2 text-sm">
-                  <option value="all">Semua Waktu</option>
-                  <option value="month">Bulan Ini</option>
-                  <option value="year">Tahun Ini</option>
-                </select>
-              </div>
-              <div>
-                <label className="text-[10px] font-bold text-slate-400 uppercase">Urutkan Berdasarkan</label>
-                <select value={sortCriteria} onChange={e => setSortCriteria(e.target.value as any)} className="w-full mt-1 border rounded-lg px-3 py-2 text-sm">
-                  <option value="order">Urutan Warga (Default)</option>
-                  <option value="jimpitan_desc">Jimpitan Terbanyak</option>
-                  <option value="jimpitan_asc">Jimpitan Terendah</option>
-                  <option value="savings_desc">Tabungan Terbanyak</option>
-                  <option value="savings_asc">Tabungan Terendah</option>
-                </select>
-              </div>
-              <div className="flex items-end">
-                <button onClick={downloadOverviewCSV} className="w-full bg-emerald-600 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-sm hover:bg-emerald-700 transition-colors">Download Rekap (CSV)</button>
-              </div>
-            </div>
+          <div className="bg-white p-6 rounded-2xl shadow-sm border flex justify-between items-center">
+            <h3 className="font-bold text-lg">Statistik Dana</h3>
+            <button onClick={downloadOverviewCSV} className="bg-emerald-600 text-white px-4 py-2 rounded-lg text-sm font-bold">Download Rekap</button>
           </div>
-          
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-center">
-            <div className="bg-white p-6 rounded-2xl shadow-sm border"><p className="text-xs font-bold text-slate-400 uppercase mb-1">Total Keseluruhan</p><h2 className="text-2xl font-bold">Rp {stats.totalCollected.toLocaleString()}</h2></div>
-            <div className="bg-white p-6 rounded-2xl shadow-sm border"><p className="text-xs font-bold text-blue-400 uppercase mb-1">Dana Jimpitan RT</p><h2 className="text-2xl font-bold text-blue-700">Rp {stats.totalJimpitan.toLocaleString()}</h2></div>
-            <div className="bg-white p-6 rounded-2xl shadow-sm border"><p className="text-xs font-bold text-emerald-400 uppercase mb-1">Tabungan Warga</p><h2 className="text-2xl font-bold text-emerald-700">Rp {stats.totalSavings.toLocaleString()}</h2></div>
+            <div className="bg-white p-6 rounded-2xl shadow-sm border"><p className="text-xs font-bold text-slate-400 uppercase">Total</p><h2 className="text-2xl font-bold">Rp {stats.totalCollected.toLocaleString()}</h2></div>
+            <div className="bg-white p-6 rounded-2xl shadow-sm border"><p className="text-xs font-bold text-blue-400 uppercase">Jimpitan RT</p><h2 className="text-2xl font-bold text-blue-700">Rp {stats.totalJimpitan.toLocaleString()}</h2></div>
+            <div className="bg-white p-6 rounded-2xl shadow-sm border"><p className="text-xs font-bold text-emerald-400 uppercase">Tabungan</p><h2 className="text-2xl font-bold text-emerald-700">Rp {stats.totalSavings.toLocaleString()}</h2></div>
           </div>
           <div className="bg-white rounded-2xl shadow-sm border overflow-hidden">
-            <div className="px-6 py-4 border-b font-bold text-sm">Laporan Transaksi Terbaru</div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm">
-                <thead className="bg-slate-50"><tr><th className="px-6 py-3">Tgl</th><th className="px-6 py-3">Warga</th><th className="px-6 py-3 text-right">Total</th><th className="px-6 py-3 text-right text-blue-600">Jimpitan</th><th className="px-6 py-3 text-right text-emerald-600">Tabungan</th></tr></thead>
-                <tbody className="divide-y">
-                  {jimpitanData.slice(-15).reverse().map(item => (
-                    <tr key={item.id} className="hover:bg-slate-50">
-                      <td className="px-6 py-4">{item.date}</td>
-                      <td className="px-6 py-4 font-medium">{item.citizenName}</td>
-                      <td className="px-6 py-4 text-right font-bold">Rp {item.amount.toLocaleString()}</td>
-                      <td className="px-6 py-4 text-right">Rp {item.jimpitanPortion.toLocaleString()}</td>
-                      <td className="px-6 py-4 text-right">Rp {item.savingsPortion.toLocaleString()}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+             <div className="px-6 py-4 border-b font-bold text-sm bg-slate-50">15 Transaksi Terakhir</div>
+             <table className="w-full text-left text-sm">
+               <tbody className="divide-y">
+                 {jimpitanData.slice(0, 15).map(item => (
+                   <tr key={item.id} className="hover:bg-slate-50">
+                     <td className="px-6 py-4">{item.date}</td>
+                     <td className="px-6 py-4 font-medium">{item.citizenName}</td>
+                     <td className="px-6 py-4 text-right font-bold text-blue-600">Rp {item.amount.toLocaleString()}</td>
+                   </tr>
+                 ))}
+               </tbody>
+             </table>
           </div>
         </div>
       )}
@@ -293,39 +254,19 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <div className="bg-white p-6 rounded-2xl shadow-sm border h-fit">
             <h3 className="font-bold mb-4">{editMode?.type === 'regu' ? 'Edit Regu' : 'Tambah Regu Baru'}</h3>
-            {editMode?.type === 'regu' ? (
-              <form onSubmit={handleEditRegu} className="space-y-4">
-                <input name="editReguName" defaultValue={users.find(u => u.id === editMode.id)?.username} className="w-full px-4 py-2 border rounded-xl" required />
-                <div className="flex gap-2">
-                  <button type="submit" className="flex-1 bg-blue-600 text-white font-bold py-2 rounded-xl text-sm">Update</button>
-                  <button type="button" onClick={() => setEditMode(null)} className="flex-1 bg-slate-100 text-slate-600 font-bold py-2 rounded-xl text-sm">Batal</button>
-                </div>
-              </form>
-            ) : (
-              <form onSubmit={handleAddRegu} className="space-y-4">
-                <input value={newReguName} onChange={e => setNewReguName(e.target.value)} placeholder="Nama Regu" className="w-full px-4 py-2 border rounded-xl" required />
-                <button type="submit" className="w-full bg-blue-600 text-white font-bold py-2 rounded-xl">Simpan Regu</button>
-              </form>
-            )}
+            <form onSubmit={editMode?.type === 'regu' ? handleEditRegu : handleAddRegu} className="space-y-4">
+              <input name={editMode?.type === 'regu' ? "editReguName" : "reguName"} defaultValue={editMode?.type === 'regu' ? users.find(u => u.id === editMode.id)?.username : ''} placeholder="Nama Regu" className="w-full px-4 py-2 border rounded-xl" required onChange={e => !editMode && setNewReguName(e.target.value)} value={!editMode ? newReguName : undefined} />
+              <button type="submit" className="w-full bg-blue-600 text-white font-bold py-2 rounded-xl">{editMode ? 'Update' : 'Simpan'}</button>
+              {editMode && <button type="button" onClick={() => setEditMode(null)} className="w-full bg-slate-100 py-2 rounded-xl text-xs">Batal</button>}
+            </form>
           </div>
           <div className="md:col-span-2 space-y-4">
             {users.filter(u => u.role === UserRole.REGU).map(r => (
-              <div key={r.id} className="bg-white p-4 rounded-xl border shadow-sm space-y-3">
-                <div className="flex justify-between items-center border-b pb-2">
-                  <h4 className="font-bold text-blue-700">{r.username}</h4>
-                  <div className="flex gap-3">
-                    <button onClick={() => setEditMode({ type: 'regu', id: r.id })} className="text-blue-500 text-xs font-bold">Edit</button>
-                    <button onClick={() => handleDeleteRegu(r.id)} className="text-red-500 text-xs font-bold">Hapus</button>
-                  </div>
-                </div>
-                <div className="space-y-1">
-                  <p className="text-[10px] text-slate-400 font-bold uppercase">Daftar Anggota:</p>
-                  <div className="flex flex-wrap gap-2">
-                    {citizens.filter(c => c.reguId === r.id).map(c => (
-                      <span key={c.id} className="text-[10px] bg-blue-50 text-blue-700 px-2 py-1 rounded font-medium">{c.name}</span>
-                    ))}
-                    {citizens.filter(c => c.reguId === r.id).length === 0 && <span className="text-[10px] text-slate-300 italic">Belum ada anggota</span>}
-                  </div>
+              <div key={r.id} className="bg-white p-4 rounded-xl border flex justify-between items-center shadow-sm">
+                <div><h4 className="font-bold text-blue-700">{r.username}</h4><p className="text-[10px] text-slate-400">Pass: regu123</p></div>
+                <div className="flex gap-4">
+                  <button onClick={() => setEditMode({ type: 'regu', id: r.id })} className="text-blue-500 text-xs font-bold">Edit</button>
+                  <button onClick={() => handleDeleteRegu(r.id)} className="text-red-500 text-xs font-bold">Hapus</button>
                 </div>
               </div>
             ))}
@@ -339,129 +280,52 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               <div className="bg-white p-6 rounded-2xl shadow-sm border h-fit">
                 <h3 className="font-bold mb-4">{editMode?.type === 'citizen' ? 'Edit Warga' : 'Tambah Warga'}</h3>
-                {editMode?.type === 'citizen' ? (
-                  <form onSubmit={handleEditCitizen} className="space-y-4">
-                    <div>
-                      <label className="text-xs font-bold text-slate-400 uppercase">Urutan</label>
-                      <input name="editOrder" type="number" defaultValue={citizens.find(c => c.id === editMode.id)?.displayOrder} className="w-full px-4 py-2 border rounded-xl" required />
-                    </div>
-                    <div>
-                      <label className="text-xs font-bold text-slate-400 uppercase">Nama Warga</label>
-                      <input name="editName" defaultValue={citizens.find(c => c.id === editMode.id)?.name} className="w-full px-4 py-2 border rounded-xl" required />
-                    </div>
-                    <div>
-                      <label className="text-xs font-bold text-slate-400 uppercase">Pilih Regu</label>
-                      <select name="editReguId" defaultValue={citizens.find(c => c.id === editMode.id)?.reguId || ""} className="w-full px-4 py-2 border rounded-xl">
-                        <option value="">-- Tanpa Regu --</option>
-                        {users.filter(u => u.role === UserRole.REGU).map(r => <option key={r.id} value={r.id}>{r.username}</option>)}
-                      </select>
-                    </div>
-                    <div className="flex gap-2">
-                      <button type="submit" className="flex-1 bg-blue-600 text-white font-bold py-2 rounded-xl text-sm">Update</button>
-                      <button type="button" onClick={() => setEditMode(null)} className="flex-1 bg-slate-100 text-slate-600 font-bold py-2 rounded-xl text-sm">Batal</button>
-                    </div>
-                  </form>
-                ) : (
-                  <form onSubmit={handleAddCitizen} className="space-y-4">
-                    <input name="citizenName" placeholder="Nama Warga" className="w-full px-4 py-2 border rounded-xl" required />
-                    <select name="reguId" className="w-full px-4 py-2 border rounded-xl">
-                      <option value="">-- Tanpa Regu --</option>
-                      {users.filter(u => u.role === UserRole.REGU).map(r => <option key={r.id} value={r.id}>{r.username}</option>)}
-                    </select>
-                    <button type="submit" className="w-full bg-blue-600 text-white font-bold py-2 rounded-xl">Tambah Warga</button>
-                  </form>
-                )}
+                <form onSubmit={editMode?.type === 'citizen' ? handleEditCitizen : handleAddCitizen} className="space-y-4">
+                  {editMode && <input name="editOrder" type="number" placeholder="Urutan" defaultValue={citizens.find(c => c.id === editMode.id)?.displayOrder} className="w-full px-4 py-2 border rounded-xl" />}
+                  <input name={editMode ? "editName" : "citizenName"} defaultValue={editMode ? citizens.find(c => c.id === editMode.id)?.name : ''} placeholder="Nama Warga" className="w-full px-4 py-2 border rounded-xl" required />
+                  <select name={editMode ? "editReguId" : "reguId"} defaultValue={editMode ? citizens.find(c => c.id === editMode.id)?.reguId : ''} className="w-full px-4 py-2 border rounded-xl">
+                    <option value="">-- Pilih Regu --</option>
+                    {users.filter(u => u.role === UserRole.REGU).map(r => <option key={r.id} value={r.id}>{r.username}</option>)}
+                  </select>
+                  <button type="submit" className="w-full bg-blue-600 text-white font-bold py-2 rounded-xl">{editMode ? 'Update' : 'Tambah'}</button>
+                  {editMode && <button type="button" onClick={() => setEditMode(null)} className="w-full bg-slate-100 py-2 rounded-xl text-xs">Batal</button>}
+                </form>
               </div>
               <div className="md:col-span-2 bg-white rounded-2xl shadow-sm border overflow-hidden">
-                <div className="px-6 py-4 border-b font-bold bg-slate-50 flex justify-between items-center">
-                  <span>Daftar Warga (List)</span>
-                  <span className="text-[10px] text-slate-400 uppercase">Gunakan Tombol ↑↓ Untuk Urutan</span>
-                </div>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-sm">
-                    <thead>
-                      <tr className="bg-slate-100 text-[10px] uppercase text-slate-500">
-                        <th className="px-6 py-3 w-16 text-center">No</th>
-                        <th className="px-6 py-3 w-20 text-center">Urutan</th>
-                        <th className="px-6 py-3">Nama Warga</th>
-                        <th className="px-6 py-3">Regu</th>
-                        <th className="px-6 py-3 text-right">Aksi</th>
+                <table className="w-full text-left text-sm">
+                  <thead className="bg-slate-50 text-[10px] uppercase font-bold text-slate-400">
+                    <tr><th className="px-6 py-3">Urut</th><th className="px-6 py-3">Nama</th><th className="px-6 py-3">Aksi</th></tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    {sortedCitizens.map((c, idx) => (
+                      <tr key={c.id} className="hover:bg-slate-50">
+                        <td className="px-6 py-4">
+                          <div className="flex items-center gap-1">
+                            <button onClick={() => moveOrder(idx, 'up')} className="p-1 hover:bg-slate-200 rounded">↑</button>
+                            <span className="font-bold text-blue-600">{c.displayOrder}</span>
+                            <button onClick={() => moveOrder(idx, 'down')} className="p-1 hover:bg-slate-200 rounded">↓</button>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 font-medium cursor-pointer" onClick={() => setSelectedCitizenId(c.id)}>{c.name}</td>
+                        <td className="px-6 py-4 flex gap-4">
+                           <button onClick={() => setEditMode({ type: 'citizen', id: c.id })} className="text-blue-500 font-bold text-xs">Edit</button>
+                           <button onClick={() => handleDeleteCitizen(c.id)} className="text-red-500 font-bold text-xs">Hapus</button>
+                        </td>
                       </tr>
-                    </thead>
-                    <tbody className="divide-y">
-                      {sortedCitizens.map((c, index) => (
-                        <tr key={c.id} className="hover:bg-slate-50 group">
-                          <td className="px-6 py-4 font-bold text-slate-300 text-center">{index + 1}</td>
-                          <td className="px-6 py-4 text-center">
-                             <div className="flex flex-col gap-1 items-center">
-                               <button onClick={() => moveOrder(index, 'up')} className={`p-1 hover:bg-slate-200 rounded ${index === 0 ? 'invisible' : ''}`}>↑</button>
-                               <span className="font-bold text-blue-600">{c.displayOrder}</span>
-                               <button onClick={() => moveOrder(index, 'down')} className={`p-1 hover:bg-slate-200 rounded ${index === sortedCitizens.length - 1 ? 'invisible' : ''}`}>↓</button>
-                             </div>
-                          </td>
-                          <td className="px-6 py-4 font-bold text-slate-800 cursor-pointer hover:text-blue-600" onClick={() => setSelectedCitizenId(c.id)}>{c.name}</td>
-                          <td className="px-6 py-4">
-                            <span className="text-[10px] bg-blue-50 text-blue-700 px-2 py-1 rounded font-bold uppercase">
-                              {users.find(u => u.id === c.reguId)?.username || 'UMUM'}
-                            </span>
-                          </td>
-                          <td className="px-6 py-4 text-right">
-                            <div className="flex justify-end gap-3 opacity-0 group-hover:opacity-100 transition-opacity">
-                              <button onClick={() => setEditMode({ type: 'citizen', id: c.id })} className="text-blue-500 font-bold text-xs">Edit</button>
-                              <button onClick={() => handleDeleteCitizen(c.id)} className="text-red-500 font-bold text-xs">Hapus</button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             </div>
-          ) : selectedCitizenData && (
-            <div className="bg-white rounded-2xl shadow-xl border overflow-hidden">
-              <div className="bg-blue-600 text-white p-6">
-                <button onClick={() => setSelectedCitizenId(null)} className="text-xs font-bold mb-2">← Kembali</button>
-                <h2 className="text-2xl font-bold">{selectedCitizenData.citizen.name}</h2>
-              </div>
-              <div className="p-6 space-y-6">
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                  <div className="p-4 bg-slate-50 rounded-xl border text-center font-bold">
-                    <p className="text-[10px] text-slate-400 uppercase">Jimpitan</p>
-                    <p>Rp {selectedCitizenData.history.reduce((s, r) => s + r.jimpitanPortion, 0).toLocaleString()}</p>
-                  </div>
-                  <div className="p-4 bg-emerald-50 rounded-xl border border-emerald-100 text-center font-bold">
-                    <p className="text-[10px] text-emerald-400 uppercase">Tabungan</p>
-                    <p className="text-emerald-700">Rp {selectedCitizenData.totalSavings.toLocaleString()}</p>
-                  </div>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div>
-                    <h4 className="font-bold text-slate-800 mb-3 text-sm uppercase">Riwayat Pembayaran</h4>
-                    <div className="overflow-x-auto border rounded-xl max-h-60 overflow-y-auto">
-                      <table className="w-full text-left text-xs">
-                        <thead className="bg-slate-100 sticky top-0"><tr><th className="p-3">Tanggal</th><th className="p-3 text-right">Jimpitan</th><th className="p-3 text-right">Tabungan</th></tr></thead>
-                        <tbody className="divide-y">{selectedCitizenData.history.slice().reverse().map(h => (<tr key={h.id}><td className="p-3">{h.date}</td><td className="p-3 text-right">Rp {h.jimpitanPortion.toLocaleString()}</td><td className="p-3 text-right font-bold text-emerald-600">Rp {h.savingsPortion.toLocaleString()}</td></tr>))}</tbody>
-                      </table>
-                    </div>
-                  </div>
-                  <div>
-                    <h4 className="font-bold text-slate-800 mb-3 text-sm uppercase">Riwayat Absensi</h4>
-                    <div className="overflow-x-auto border rounded-xl max-h-60 overflow-y-auto">
-                      <table className="w-full text-left text-xs">
-                        <thead className="bg-slate-100 sticky top-0"><tr><th className="p-3">Tanggal</th><th className="p-3">Status</th><th className="p-3">Alasan</th></tr></thead>
-                        <tbody className="divide-y">
-                          {selectedCitizenData.attHistory.slice().reverse().map(a => (
-                            <tr key={a.id}>
-                              <td className="p-3">{(a as any).date || 'N/A'}</td>
-                              <td className="p-3 font-bold"><span className={a.status === 'HADIR' ? 'text-emerald-600' : 'text-red-500'}>{a.status}</span></td>
-                              <td className="p-3 text-slate-400 italic">{a.reason || '-'}</td>
-                            </tr>
-                          ))}
-                          {selectedCitizenData.attHistory.length === 0 && <tr><td colSpan={3} className="p-3 text-center text-slate-400 italic">Belum ada riwayat absen</td></tr>}
-                        </tbody>
-                      </table>
-                    </div>
+          ) : (
+            <div className="bg-white p-6 rounded-2xl shadow-xl border">
+              <button onClick={() => setSelectedCitizenId(null)} className="text-blue-600 font-bold mb-4">← Kembali</button>
+              <h2 className="text-2xl font-bold mb-6">{selectedCitizenData?.citizen.name}</h2>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="border rounded-xl p-4">
+                  <h4 className="font-bold mb-3 uppercase text-xs text-slate-400">Riwayat Pembayaran</h4>
+                  <div className="max-h-60 overflow-y-auto space-y-2">
+                    {selectedCitizenData?.history.map(h => <div key={h.id} className="flex justify-between text-sm py-1 border-b"><span>{h.date}</span><span className="font-bold">Rp {h.amount.toLocaleString()}</span></div>)}
                   </div>
                 </div>
               </div>
@@ -470,78 +334,21 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
         </div>
       )}
 
-      {activeTab === 'absensi' && (
-        <div className="bg-white rounded-2xl shadow-sm border p-6">
-          <h3 className="font-bold mb-6">Riwayat Absensi Ronda</h3>
-          <div className="space-y-6">
-            {Object.entries(groupedAttendances).reverse().map(([key, list]) => (
-              <div key={key} className="border rounded-xl overflow-hidden shadow-sm">
-                <div className="bg-slate-100 px-4 py-2 font-bold text-xs flex justify-between"><span>{key}</span><span>{(list as Attendance[]).length} Orang</span></div>
-                <div className="p-4 grid grid-cols-1 sm:grid-cols-3 gap-2">
-                  {(list as Attendance[]).map(a => (
-                    <div key={a.id} className="p-2 bg-white rounded border flex justify-between items-center text-[10px]">
-                      <span>{citizens.find(c => c.id === a.citizenId)?.name}</span>
-                      <span className={`px-2 rounded font-bold ${a.status === 'HADIR' ? 'text-emerald-600' : 'text-red-600'}`}>{a.status}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {activeTab === 'meetings' && (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div className="bg-white p-6 rounded-2xl shadow-sm border h-fit">
-            <h3 className="font-bold mb-4">Input Agenda Rapat</h3>
-            <form onSubmit={addMeeting} className="space-y-4">
-              <input name="agenda" placeholder="Judul Rapat" className="w-full px-4 py-2 border rounded-xl" required />
-              <input name="meetingDate" type="date" className="w-full px-4 py-2 border rounded-xl" required />
-              <textarea name="notes" placeholder="Catatan/Hasil Rapat" className="w-full px-4 py-2 border rounded-xl" rows={3}></textarea>
-              <button type="submit" className="w-full bg-blue-600 text-white font-bold py-2 rounded-xl">Simpan Rapat</button>
-            </form>
-          </div>
-          <div className="md:col-span-2 space-y-4">
-            {meetings.slice().reverse().map(m => (
-              <div key={m.id} className="bg-white p-4 rounded-xl border shadow-sm">
-                <div className="flex justify-between items-start mb-2"><h4 className="font-bold text-blue-700">{m.agenda}</h4><span className="text-xs bg-blue-50 text-blue-600 px-2 py-1 rounded-full">{m.date}</span></div>
-                <p className="text-xs text-slate-600">{m.notes}</p>
-                <p className="text-[10px] text-slate-400 mt-2 font-bold uppercase">No: {m.minutesNumber}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
       {activeTab === 'settings' && (
         <div className="max-w-xl mx-auto space-y-6">
-          <div className="bg-white p-8 rounded-2xl shadow-sm border space-y-6">
-            <h3 className="text-xl font-bold">Pengaturan Lingkungan</h3>
-            <div className="space-y-4">
-              <div><label className="text-xs font-bold text-slate-400">Nama RT/RW/Desa</label><input value={settings.villageName} onChange={e => setSettings({...settings, villageName: e.target.value})} className="w-full px-4 py-2 border rounded-xl" /></div>
-              <div><label className="text-xs font-bold text-slate-400">Alamat</label><textarea value={settings.address} onChange={e => setSettings({...settings, address: e.target.value})} className="w-full px-4 py-2 border rounded-xl" /></div>
-              <div><label className="text-xs font-bold text-slate-400">Nominal Jimpitan Kas (Rp)</label><input type="number" value={settings.jimpitanNominal} onChange={e => setSettings({...settings, jimpitanNominal: parseInt(e.target.value) || 0})} className="w-full px-4 py-2 border rounded-xl font-bold text-blue-600" /></div>
+          <div className="bg-white p-8 rounded-2xl shadow-sm border space-y-4">
+            <h3 className="text-xl font-bold">Identitas RT/Desa</h3>
+            <input value={settings.villageName} onChange={e => setSettings({...settings, villageName: e.target.value})} className="w-full px-4 py-2 border rounded-xl" placeholder="Nama RT" />
+            <textarea value={settings.address} onChange={e => setSettings({...settings, address: e.target.value})} className="w-full px-4 py-2 border rounded-xl" placeholder="Alamat" />
+            <div className="pt-4 border-t">
+               <label className="text-xs font-bold text-slate-400">Nominal Jimpitan Kas (Rp)</label>
+               <input type="number" value={settings.jimpitanNominal} onChange={e => setSettings({...settings, jimpitanNominal: parseInt(e.target.value) || 0})} className="w-full px-4 py-2 border rounded-xl font-bold text-blue-600" />
             </div>
           </div>
-
-          <div className="bg-red-50 p-8 rounded-2xl shadow-sm border border-red-100 space-y-4">
-            <div className="flex items-center gap-3">
-               <div className="p-2 bg-red-100 rounded-lg">
-                 <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                 </svg>
-               </div>
-               <h3 className="text-xl font-bold text-red-800">Zona Bahaya</h3>
-            </div>
-            <p className="text-sm text-red-600">Menghapus seluruh data aplikasi (Warga, Jimpitan, Absensi, Rapat). Gunakan fitur ini hanya jika ingin memulai periode baru atau membersihkan database.</p>
-            <button 
-              onClick={handleResetData}
-              disabled={isResetting}
-              className={`w-full ${isResetting ? 'bg-red-400' : 'bg-red-600 hover:bg-red-700'} text-white font-bold py-3 rounded-xl shadow-lg transition-all flex items-center justify-center gap-2`}
-            >
-              {isResetting ? 'Sedang Menghapus...' : 'RESET SELURUH DATA'}
-            </button>
+          <div className="bg-red-50 p-8 rounded-2xl border border-red-100">
+            <h3 className="font-bold text-red-800 mb-2">Hapus Seluruh Data</h3>
+            <p className="text-xs text-red-600 mb-6">Aksi ini akan membersihkan seluruh daftar warga dan riwayat transaksi.</p>
+            <button onClick={handleResetData} disabled={isResetting} className="w-full bg-red-600 text-white font-bold py-3 rounded-xl shadow-lg">{isResetting ? 'Menghapus...' : 'RESET DATABASE SEKARANG'}</button>
           </div>
         </div>
       )}
