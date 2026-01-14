@@ -34,12 +34,12 @@ const App: React.FC = () => {
   const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [attendances, setAttendances] = useState<Attendance[]>([]);
 
-  // Mengecek apakah koneksi Supabase asli (bukan placeholder)
-  const isSupabaseConfigured = process.env.VITE_SUPABASE_URL && process.env.VITE_SUPABASE_URL !== 'https://placeholder-project.supabase.co';
+  // Logika pengecekan yang lebih kuat untuk environment variable
+  const isSupabaseConfigured = !!(process.env.VITE_SUPABASE_URL && process.env.VITE_SUPABASE_URL.includes('supabase.co'));
 
   const fetchData = async () => {
     if (!isSupabaseConfigured) {
-      console.warn("Supabase belum dikonfigurasi. Menggunakan data statis.");
+      console.warn("Koneksi Supabase tidak terdeteksi atau URL tidak valid.");
       setIsLoading(false);
       return;
     }
@@ -148,7 +148,7 @@ const App: React.FC = () => {
       
       {!isSupabaseConfigured && (
         <div className="bg-amber-100 text-amber-800 text-[10px] py-1 text-center font-bold uppercase">
-          Mode Offline: Environment Variables Supabase Belum Diatur di Vercel
+          Mode Offline: Environment Variables Supabase Belum Terbaca
         </div>
       )}
 
