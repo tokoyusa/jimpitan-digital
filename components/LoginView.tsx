@@ -31,7 +31,7 @@ const LoginView: React.FC<LoginViewProps> = ({ users, onLogin }) => {
       <div className="max-w-md w-full bg-white rounded-2xl shadow-xl p-8 border border-blue-100">
         <div className="text-center mb-8">
           <h1 className="text-3xl font-bold text-blue-800 tracking-tight uppercase">JIMPITAN DIGITAL</h1>
-          <p className="text-slate-500 mt-2 text-sm">Selamat datang, silakan masuk ke akun Anda</p>
+          <p className="text-slate-500 mt-2">Selamat datang, silakan masuk ke akun Anda</p>
         </div>
 
         {error && (
@@ -42,20 +42,23 @@ const LoginView: React.FC<LoginViewProps> = ({ users, onLogin }) => {
 
         <form onSubmit={handleLogin} className="space-y-6">
           <div>
-            <label className="block text-sm font-semibold text-slate-700 mb-1">Pilih Akun / Nama Regu</label>
-            <select
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all appearance-none"
-              required
-            >
-              <option value="">-- Pilih Admin atau Regu --</option>
-              {filteredUsersForDropdown.map(u => (
-                <option key={u.id} value={u.username}>
-                  {u.username} ({u.role})
-                </option>
-              ))}
-            </select>
+            <label className="block text-sm font-semibold text-slate-700 mb-1">Nama / Regu</label>
+            <div className="relative">
+              <input
+                list="user-list"
+                type="text"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
+                placeholder="Pilih Akun Admin / Regu"
+                required
+              />
+              <datalist id="user-list">
+                {filteredUsersForDropdown.map(u => (
+                  <option key={u.id} value={u.username}>{u.role}</option>
+                ))}
+              </datalist>
+            </div>
           </div>
 
           <div>
@@ -84,13 +87,13 @@ const LoginView: React.FC<LoginViewProps> = ({ users, onLogin }) => {
             <div className="bg-slate-50 p-2 rounded">
               <p>Admin: <strong>admin</strong> / Pass: <strong>password123</strong></p>
               <p className="mt-1 text-blue-600">Regu Baru: Password default <strong>regu123</strong></p>
-              <p className="text-emerald-600">Warga: Masuk via Nama di Dashboard Admin / Pass: <strong>warga123</strong></p>
+              <p className="text-emerald-600">Warga: Login menggunakan <strong>Nama Warga</strong> / Pass: <strong>warga123</strong></p>
             </div>
           </div>
         </div>
       </div>
       
-      <footer className="mt-8 text-center text-slate-400 text-xs font-medium uppercase tracking-widest">
+      <footer className="mt-8 text-center text-slate-400 text-xs font-medium uppercase tracking-wider">
         aplikasi dibuat oleh YUSAPEDIA 2026
       </footer>
     </div>

@@ -1,31 +1,70 @@
 
-const getEnv = (key: string): string => {
-  if (typeof window !== 'undefined' && (window as any).env) {
-    return (window as any).env[key] || "";
-  }
-  return "";
-};
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.7';
 
-const supabaseUrl = getEnv('VITE_SUPABASE_URL');
-const supabaseAnonKey = getEnv('VITE_SUPABASE_ANON_KEY');
+// Gunakan environment variables di Vercel/Hosting
+const supabaseUrl = (import.meta as any).env?.VITE_SUPABASE_URL || '';
+const supabaseAnonKey = (import.meta as any).env?.VITE_SUPABASE_ANON_KEY || '';
 
-export const isConfigured = 
-  !!supabaseUrl && 
-  supabaseUrl.length > 10 && 
-  supabaseUrl.includes('supabase.co');
+export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
-// Gunakan library dari window yang dimuat di index.html
-const supabaseLib = (window as any).supabase;
+/* 
+  STRUKTUR SQL UNTUK SUPABASE (Jalankan di SQL Editor Supabase):
 
-export const supabase = isConfigured 
-  ? supabaseLib.createClient(supabaseUrl, supabaseAnonKey)
-  : { 
-      from: () => ({ 
-        select: () => ({ single: () => Promise.resolve({ data: null }), order: () => Promise.resolve({ data: [] }) }),
-        insert: () => Promise.resolve({ data: null }),
-        update: () => ({ eq: () => Promise.resolve({ data: null }) }),
-        delete: () => ({ eq: () => Promise.resolve({ data: null }) })
-      }),
-      channel: () => ({ on: () => ({ subscribe: () => ({}) }) }),
-      removeChannel: () => {}
-    } as any;
+  -- Tabel Settings
+  CREATE TABLE settings (
+    id SERIAL PRIMARY KEY,
+    village_name TEXT,
+    address TEXT,
+    jimpitan_nominal INTEGER
+  );
+
+  -- Tabel Users
+  CREATE TABLE users (
+    id TEXT PRIMARY KEY,
+    username TEXT UNIQUE,
+    password TEXT,
+    role TEXT,
+    regu_name TEXT
+  );
+
+  -- Tabel Citizens
+  CREATE TABLE citizens (
+    id TEXT PRIMARY KEY,
+    name TEXT,
+    regu_id TEXT REFERENCES users(id),
+    display_order INTEGER
+  );
+
+  -- Tabel Jimpitan Records
+  CREATE TABLE jimpitan_records (
+    id TEXT PRIMARY KEY,
+    citizen_id TEXT REFERENCES citizens(id),
+    citizen_name TEXT,
+    amount INTEGER,
+    jimpitan_portion INTEGER,
+    savings_portion INTEGER,
+    date DATE,
+    regu_name TEXT,
+    is_sent BOOLEAN DEFAULT false
+  );
+
+  -- Tabel Meetings
+  CREATE TABLE meetings (
+    id TEXT PRIMARY KEY,
+    agenda TEXT,
+    date DATE,
+    minutes_number TEXT,
+    notes TEXT
+  );
+
+  -- Tabel Attendances
+  CREATE TABLE attendances (
+    id TEXT PRIMARY KEY,
+    meeting_id TEXT,
+    citizen_id TEXT,
+    status TEXT,
+    reason TEXT,
+    date DATE,
+    regu_id TEXT
+  );
+*/
