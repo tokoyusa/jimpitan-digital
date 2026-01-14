@@ -57,20 +57,55 @@ const App: React.FC = () => {
         db.getJimpitan(),
         db.getMeetings(),
         db.getAttendances(),
-        supabase.from('users_app').select('*')
+        db.getUsers()
       ]);
 
-      if (sData) setSettings(sData as any);
+      if (sData) setSettings({
+        villageName: sData.village_name,
+        address: sData.address,
+        jimpitanNominal: sData.jimpitan_nominal
+      });
+      
       if (cData) setCitizens(cData.map((c: any) => ({
         id: c.id,
         name: c.name,
         reguId: c.regu_id,
         displayOrder: c.display_order
       })));
-      if (jData) setJimpitanData(jData as any);
-      if (mData) setMeetings(mData as any);
+
+      if (uData && uData.length > 0) {
+        setUsers(uData.map((u: any) => ({
+          id: u.id,
+          username: u.username,
+          password: u.password,
+          role: u.role as UserRole,
+          reguName: u.regu_name
+        })));
+      }
+
+      if (jData) setJimpitanData(jData.map((j: any) => ({
+        id: j.id,
+        citizenId: j.citizen_id,
+        citizenName: j.citizen_name,
+        amount: j.amount,
+        jimpitanPortion: j.jimpitan_portion,
+        savingsPortion: j.savings_portion,
+        date: j.date,
+        reguName: j.regu_name,
+        isSent: j.is_sent,
+        isSaved: j.is_saved
+      })));
+
+      if (mData) setMeetings(mData.map((m: any) => ({
+        id: m.id,
+        agenda: m.agenda,
+        date: m.date,
+        minutesNumber: m.minutes_number,
+        notes: m.notes
+      })));
+
       if (aData) setAttendances(aData as any);
-      if (uData && uData.length > 0) setUsers(uData as any);
+      
     } catch (error) {
       console.error("Error fetching database:", error);
     } finally {
@@ -82,7 +117,7 @@ const App: React.FC = () => {
     loadDataFromDB();
   }, []);
 
-  // Sync Wrappers
+  // Sync Wrappers - Penting untuk sinkronisasi antar perangkat
   const syncSettings = async (newSettings: Settings) => {
     setSettings(newSettings);
     if (isConfigured) {
@@ -99,7 +134,14 @@ const App: React.FC = () => {
     const newUsers = typeof arg === 'function' ? arg(users) : arg;
     setUsers(newUsers);
     if (isConfigured) {
-      await supabase.from('users_app').upsert(newUsers);
+      const payload = newUsers.map(u => ({
+        id: u.id,
+        username: u.username,
+        password: u.password,
+        role: u.role,
+        regu_name: u.reguName
+      }));
+      await supabase.from('users_app').upsert(payload);
     }
   };
 
@@ -124,7 +166,7 @@ const App: React.FC = () => {
       <div className="min-h-screen flex items-center justify-center bg-slate-50">
         <div className="text-center">
           <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-slate-500 font-medium tracking-widest uppercase text-[10px]">Menyinkronkan Data...</p>
+          <p className="text-slate-500 font-bold uppercase text-[10px] tracking-widest">Sinkronisasi Awan...</p>
         </div>
       </div>
     );
@@ -148,7 +190,16 @@ const App: React.FC = () => {
             setMeetings={async (m: any) => {
               const val = typeof m === 'function' ? m(meetings) : m;
               setMeetings(val);
-              if(isConfigured) await supabase.from('meetings').upsert(val);
+              if(isConfigured) {
+                const payload = val.map((item: any) => ({
+                  id: item.id,
+                  agenda: item.agenda,
+                  date: item.date,
+                  minutes_number: item.minutesNumber,
+                  notes: item.notes
+                }));
+                await supabase.from('meetings').upsert(payload);
+              }
             }}
             attendances={attendances}
             setAttendances={async (a: any) => {
@@ -166,7 +217,21 @@ const App: React.FC = () => {
             setJimpitanData={async (val: any) => {
               const newData = typeof val === 'function' ? val(jimpitanData) : val;
               setJimpitanData(newData);
-              if(isConfigured) await supabase.from('jimpitan_records').upsert(newData);
+              if(isConfigured) {
+                const payload = newData.map((j: any) => ({
+                  id: j.id,
+                  citizen_id: j.citizenId,
+                  citizen_name: j.citizenName,
+                  amount: j.amount,
+                  jimpitan_portion: j.jimpitanPortion,
+                  savings_portion: j.savingsPortion,
+                  date: j.date,
+                  regu_name: j.reguName,
+                  is_sent: j.isSent,
+                  is_saved: j.isSaved
+                }));
+                await supabase.from('jimpitan_records').upsert(payload);
+              }
             }}
             meetings={meetings} attendances={attendances}
             setAttendances={async (val: any) => {
