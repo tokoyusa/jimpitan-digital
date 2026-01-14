@@ -45,21 +45,21 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
     return { totalCollected, totalJimpitan, totalSavings };
   }, [jimpitanData]);
 
+  // FUNGSI RESET TOTAL (MENGHAPUS SEMUA DATA)
   const handleResetData = async () => {
-    const confirm1 = confirm("PERINGATAN: Hapus SELURUH data? (Warga, Jimpitan, Absensi, Rapat).");
+    const confirm1 = confirm("PERINGATAN KRITIKAL: Hapus SELURUH data aplikasi?");
     if (!confirm1) return;
-
-    const confirm2 = confirm("KONFIRMASI TERAKHIR: Data akan hilang permanen!");
+    const confirm2 = confirm("DATA TIDAK BISA DIKEMBALIKAN. Lanjutkan?");
     if (!confirm2) return;
 
     setIsResetting(true);
     try {
       if (isConfigured) {
-        // Hapus child data terlebih dahulu untuk menghindari error Foreign Key
-        await supabase.from('jimpitan_records').delete().neq('id', '_none_');
-        await supabase.from('attendances').delete().neq('id', '_none_');
-        await supabase.from('meetings').delete().neq('id', '_none_');
-        await supabase.from('citizens').delete().neq('id', '_none_');
+        // Urutan penghapusan manual yang sangat ketat untuk bypass Foreign Key
+        await supabase.from('jimpitan_records').delete().neq('id', '___NONE___');
+        await supabase.from('attendances').delete().neq('id', '___NONE___');
+        await supabase.from('meetings').delete().neq('id', '___NONE___');
+        await supabase.from('citizens').delete().neq('id', '___NONE___');
         await supabase.from('users_app').delete().eq('role', UserRole.WARGA);
       }
 
@@ -68,59 +68,68 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
       setAttendances([]);
       setUsers(prev => prev.filter(u => u.role !== UserRole.WARGA));
       
-      alert("Seluruh data berhasil dihapus!");
+      alert("Seluruh data cloud dan lokal berhasil dibersihkan.");
       window.location.reload(); 
     } catch (error) {
       console.error("Reset Error:", error);
-      alert("Gagal mereset data cloud. Silakan jalankan SQL schema CASCADE di dashboard Supabase.");
+      alert("Gagal mereset Cloud. Pastikan Anda sudah menjalankan SQL Script CASCADE di Supabase.");
     } finally {
       setIsResetting(false);
     }
   };
 
+  // FUNGSI HAPUS REGU
   const handleDeleteRegu = async (id: string) => {
-    if (confirm('Hapus regu ini? Akun login regu juga akan terhapus.')) {
-      if (isConfigured) {
-        // Update warga yang tadinya milik regu ini menjadi tanpa regu
-        await supabase.from('citizens').update({ regu_id: null }).eq('regu_id', id);
-        // Hapus user regu
-        await supabase.from('users_app').delete().eq('id', id);
-      }
-      setUsers(users.filter(u => u.id !== id));
-      setCitizens(citizens.map(c => c.reguId === id ? { ...c, reguId: undefined } : c));
-      alert('Regu dihapus.');
-    }
-  };
-
-  const handleDeleteCitizen = async (id: string) => {
-    if (confirm('Hapus warga ini? Seluruh riwayat jimpitan & tabungannya akan ikut terhapus.')) {
+    if (confirm('Hapus regu ini? Akun login regu akan hilang.')) {
       try {
         if (isConfigured) {
-          // Hapus history jimpitan & absensi dulu jika database belum disetting CASCADE
-          await supabase.from('jimpitan_records').delete().eq('citizen_id', id);
-          await supabase.from('attendances').delete().eq('citizen_id', id);
-          // Baru hapus warga
-          await supabase.from('citizens').delete().eq('id', id);
-          // Hapus akun warga
-          await supabase.from('users_app').delete().eq('id', `u-${id}`);
+          // Lepaskan warga dari regu ini dulu
+          await supabase.from('citizens').update({ regu_id: null }).eq('regu_id', id);
+          // Hapus user regu
+          await supabase.from('users_app').delete().eq('id', id);
         }
-        setCitizens(citizens.filter(c => c.id !== id));
-        setUsers(users.filter(u => u.id !== `u-${id}`));
-        alert('Data warga berhasil dihapus.');
+        setUsers(users.filter(u => u.id !== id));
+        setCitizens(citizens.map(c => c.reguId === id ? { ...c, reguId: undefined } : c));
+        alert('Regu berhasil dihapus.');
       } catch (err) {
-        alert('Gagal menghapus data di cloud.');
+        alert('Gagal menghapus regu di cloud.');
       }
     }
   };
 
-  // --- Fungsi Tambah/Edit Tetap ---
+  // FUNGSI HAPUS WARGA (DENGAN MEMBERSIHKAN DATA TERKAIT DULU)
+  const handleDeleteCitizen = async (id: string) => {
+    if (confirm('Hapus warga ini? Seluruh riwayat jimpitan & tabungan mereka AKAN HILANG.')) {
+      try {
+        if (isConfigured) {
+          // 1. Hapus riwayat jimpitan milik warga ini (Child)
+          await supabase.from('jimpitan_records').delete().eq('citizen_id', id);
+          // 2. Hapus riwayat absensi milik warga ini (Child)
+          await supabase.from('attendances').delete().eq('citizen_id', id);
+          // 3. Hapus data utama warga (Parent)
+          await supabase.from('citizens').delete().eq('id', id);
+          // 4. Hapus akun login warga
+          await supabase.from('users_app').delete().eq('id', `u-${id}`);
+        }
+        
+        // Update state lokal secara instan
+        setCitizens(prev => prev.filter(c => c.id !== id));
+        setUsers(prev => prev.filter(u => u.id !== `u-${id}`));
+        alert('Warga dan seluruh riwayatnya berhasil dihapus.');
+      } catch (err) {
+        console.error(err);
+        alert('Gagal menghapus. Kemungkinan ada kendala koneksi atau database locked.');
+      }
+    }
+  };
+
   const handleAddRegu = (e: React.FormEvent) => {
     e.preventDefault();
     const id = Date.now().toString();
     const newRegu: User = { id, username: newReguName, password: 'regu123', role: UserRole.REGU, reguName: newReguName };
     setUsers([...users, newRegu]);
     setNewReguName('');
-    alert('Regu berhasil ditambah! Pass: regu123');
+    alert('Regu ditambah. Pass default: regu123');
   };
 
   const handleEditRegu = (e: React.FormEvent) => {
@@ -175,17 +184,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
   };
 
   const downloadOverviewCSV = () => {
-    const now = new Date();
-    const currentMonth = now.getMonth();
-    const currentYear = now.getFullYear();
-    const filteredData = jimpitanData.filter(item => {
-      const d = new Date(item.date);
-      if (downloadPeriod === 'month') return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
-      if (downloadPeriod === 'year') return d.getFullYear() === currentYear;
-      return true;
-    });
     let reportList = sortedCitizens.map(c => {
-      const history = filteredData.filter(j => j.citizenId === c.id);
+      const history = jimpitanData.filter(j => j.citizenId === c.id);
       const jTotal = history.reduce((s, r) => s + r.jimpitanPortion, 0);
       const sTotal = history.reduce((s, r) => s + r.savingsPortion, 0);
       return { ...c, jTotal, sTotal, total: jTotal + sTotal };
@@ -229,9 +229,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
             <button onClick={downloadOverviewCSV} className="bg-emerald-600 text-white px-4 py-2 rounded-lg text-sm font-bold">Download Rekap</button>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-center">
-            <div className="bg-white p-6 rounded-2xl shadow-sm border"><p className="text-xs font-bold text-slate-400 uppercase">Total</p><h2 className="text-2xl font-bold">Rp {stats.totalCollected.toLocaleString()}</h2></div>
-            <div className="bg-white p-6 rounded-2xl shadow-sm border"><p className="text-xs font-bold text-blue-400 uppercase">Jimpitan RT</p><h2 className="text-2xl font-bold text-blue-700">Rp {stats.totalJimpitan.toLocaleString()}</h2></div>
-            <div className="bg-white p-6 rounded-2xl shadow-sm border"><p className="text-xs font-bold text-emerald-400 uppercase">Tabungan</p><h2 className="text-2xl font-bold text-emerald-700">Rp {stats.totalSavings.toLocaleString()}</h2></div>
+            <div className="bg-white p-6 rounded-2xl shadow-sm border"><p className="text-xs font-bold text-slate-400 uppercase">Total Terkumpul</p><h2 className="text-2xl font-bold">Rp {stats.totalCollected.toLocaleString()}</h2></div>
+            <div className="bg-white p-6 rounded-2xl shadow-sm border"><p className="text-xs font-bold text-blue-400 uppercase">Kas RT (Jimpitan)</p><h2 className="text-2xl font-bold text-blue-700">Rp {stats.totalJimpitan.toLocaleString()}</h2></div>
+            <div className="bg-white p-6 rounded-2xl shadow-sm border"><p className="text-xs font-bold text-emerald-400 uppercase">Tabungan Warga</p><h2 className="text-2xl font-bold text-emerald-700">Rp {stats.totalSavings.toLocaleString()}</h2></div>
           </div>
           <div className="bg-white rounded-2xl shadow-sm border overflow-hidden">
              <div className="px-6 py-4 border-b font-bold text-sm bg-slate-50">15 Transaksi Terakhir</div>
@@ -326,6 +326,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   <h4 className="font-bold mb-3 uppercase text-xs text-slate-400">Riwayat Pembayaran</h4>
                   <div className="max-h-60 overflow-y-auto space-y-2">
                     {selectedCitizenData?.history.map(h => <div key={h.id} className="flex justify-between text-sm py-1 border-b"><span>{h.date}</span><span className="font-bold">Rp {h.amount.toLocaleString()}</span></div>)}
+                    {selectedCitizenData?.history.length === 0 && <p className="text-xs text-slate-400 italic">Belum ada riwayat.</p>}
                   </div>
                 </div>
               </div>
@@ -347,8 +348,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
           </div>
           <div className="bg-red-50 p-8 rounded-2xl border border-red-100">
             <h3 className="font-bold text-red-800 mb-2">Hapus Seluruh Data</h3>
-            <p className="text-xs text-red-600 mb-6">Aksi ini akan membersihkan seluruh daftar warga dan riwayat transaksi.</p>
-            <button onClick={handleResetData} disabled={isResetting} className="w-full bg-red-600 text-white font-bold py-3 rounded-xl shadow-lg">{isResetting ? 'Menghapus...' : 'RESET DATABASE SEKARANG'}</button>
+            <p className="text-xs text-red-600 mb-6">Aksi ini akan membersihkan seluruh daftar warga dan riwayat transaksi secara permanen.</p>
+            <button onClick={handleResetData} disabled={isResetting} className="w-full bg-red-600 text-white font-bold py-3 rounded-xl shadow-lg active:scale-95 transition-all">{isResetting ? 'Sedang Menghapus...' : 'RESET DATABASE SEKARANG'}</button>
           </div>
         </div>
       )}
