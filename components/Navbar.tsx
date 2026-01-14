@@ -18,19 +18,14 @@ const Navbar: React.FC<NavbarProps> = ({ user, onLogout, villageName }) => {
       return;
     }
     
-    try {
-      const connected = await db.testConnection();
-      setDbStatus(connected ? 'connected' : 'error');
-    } catch (err) {
-      setDbStatus('error');
-    }
+    const isOk = await db.testConnection();
+    setDbStatus(isOk ? 'connected' : 'error');
   };
 
   useEffect(() => {
     checkConnection();
-    
-    // Cek ulang koneksi setiap 30 detik untuk memastikan status tetap hijau
-    const interval = setInterval(checkConnection, 30000);
+    // Interval lebih cepat di awal, lalu melambat
+    const interval = setInterval(checkConnection, 15000);
     return () => clearInterval(interval);
   }, []);
 
@@ -41,14 +36,13 @@ const Navbar: React.FC<NavbarProps> = ({ user, onLogout, villageName }) => {
           <div className="flex flex-col">
             <div className="flex items-center gap-2">
               <span className="font-bold text-lg leading-tight tracking-tight">JIMPITAN DIGITAL</span>
-              {/* Database Status Indicator */}
               <div 
-                className={`w-2.5 h-2.5 rounded-full border border-white/20 ${
-                  dbStatus === 'connected' ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.6)]' : 
+                className={`w-3 h-3 rounded-full border-2 border-white/30 transition-colors duration-500 ${
+                  dbStatus === 'connected' ? 'bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.8)]' : 
                   dbStatus === 'error' ? 'bg-red-500' : 
-                  dbStatus === 'offline' ? 'bg-amber-400' : 'bg-slate-400 animate-pulse'
+                  dbStatus === 'offline' ? 'bg-amber-400 shadow-[0_0_10px_rgba(251,191,36,0.5)]' : 'bg-slate-400 animate-pulse'
                 }`}
-                title={`Database: ${dbStatus === 'connected' ? 'Terkoneksi (Cloud)' : dbStatus === 'offline' ? 'Mode Offline (Cek API Key)' : 'Gangguan Koneksi'}`}
+                title={dbStatus === 'connected' ? 'Cloud Terkoneksi' : 'Cek Konfigurasi API'}
               />
             </div>
             <span className="text-[10px] text-blue-200 uppercase tracking-tighter font-medium">{villageName}</span>

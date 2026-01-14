@@ -1,45 +1,44 @@
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.7';
 
-const getEnv = (key: string): string => {
-  try {
-    // 1. Coba ambil dari process.env (Vercel Backend/Build Time)
-    if (typeof process !== 'undefined' && process.env?.[key]) {
-      return process.env[key] as string;
-    }
-    // 2. Coba ambil dari window.process (Injected by some hosts)
-    if (typeof window !== 'undefined' && (window as any).process?.env?.[key]) {
-      return (window as any).process.env[key];
-    }
-    // 3. Coba akses global variable jika ada fallback manual
-    if (typeof window !== 'undefined' && (window as any)[key]) {
-      return (window as any)[key];
-    }
-  } catch (e) {
-    console.warn(`Error accessing env ${key}:`, e);
-  }
+// Fungsi pencarian env variable yang lebih kuat
+const getSecret = (key: string): string => {
+  if (typeof window === 'undefined') return '';
+  
+  // 1. Coba dari process.env (Vite/CRA/Vercel)
+  const processEnv = (window as any).process?.env?.[key] || (import.meta as any).env?.[key];
+  if (processEnv) return processEnv;
+
+  // 2. Coba dari window object langsung (Fallback jika di-inject manual)
+  if ((window as any)[key]) return (window as any)[key];
+  
+  // 3. Coba dari API_KEY global (Standar platform)
+  if (key === 'SUPABASE_ANON_KEY' && (window as any).API_KEY) return (window as any).API_KEY;
+  if (key === 'API_KEY' && (window as any).API_KEY) return (window as any).API_KEY;
+
   return '';
 };
 
-const supabaseUrl = getEnv('VITE_SUPABASE_URL') || getEnv('SUPABASE_URL') || '';
-const supabaseAnonKey = getEnv('VITE_SUPABASE_ANON_KEY') || getEnv('SUPABASE_ANON_KEY') || getEnv('API_KEY') || '';
+// Pastikan urutan prioritas benar
+const supabaseUrl = getSecret('VITE_SUPABASE_URL') || getSecret('SUPABASE_URL');
+const supabaseAnonKey = getSecret('VITE_SUPABASE_ANON_KEY') || getSecret('SUPABASE_ANON_KEY') || getSecret('API_KEY');
 
-// Validasi minimal panjang string untuk memastikan key bukan dummy/kosong
-export const isConfigured = supabaseUrl.length > 15 && supabaseAnonKey.length > 20;
+// Indikator konfigurasi valid
+export const isConfigured = Boolean(
+  supabaseUrl && 
+  supabaseUrl.includes('supabase.co') && 
+  supabaseAnonKey && 
+  supabaseAnonKey.length > 20
+);
 
-const safeUrl = isConfigured ? supabaseUrl : 'https://placeholder-project.supabase.co';
-const safeKey = isConfigured ? supabaseAnonKey : 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.dummy';
+// Fallback untuk mencegah crash total jika belum dikonfigurasi
+const finalUrl = isConfigured ? supabaseUrl : 'https://placeholder.supabase.co';
+const finalKey = isConfigured ? supabaseAnonKey : 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.dummy';
 
-// Singleton instance
-export const supabase = createClient(safeUrl, safeKey, {
-  auth: {
-    persistSession: true,
-    autoRefreshToken: true
-  }
-});
+export const supabase = createClient(finalUrl, finalKey);
 
 export const db = {
-  getSettings: () => supabase.from('settings').select('*').single(),
+  getSettings: () => supabase.from('settings').select('*').maybeSingle(),
   getCitizens: () => supabase.from('citizens').select('*').order('display_order', { ascending: true }),
   getJimpitan: () => supabase.from('jimpitan_records').select('*').order('date', { ascending: false }),
   getMeetings: () => supabase.from('meetings').select('*').order('date', { ascending: false }),
@@ -49,10 +48,13 @@ export const db = {
   testConnection: async () => {
     if (!isConfigured) return false;
     try {
-      // Mencoba query ringan untuk verifikasi koneksi real-time
-      const { error } = await supabase.from('settings').select('id').limit(1).single();
-      if (error && error.code === 'PGRST116') return true; // Data kosong tapi koneksi sukses
-      return !error;
+      // Pengecekan versi paling sederhana ke tabel settings
+      const { data, error } = await supabase.from('settings').select('id').limit(1);
+      if (error) {
+        console.error('Database connection test failed:', error.message);
+        return false;
+      }
+      return true;
     } catch (e) {
       return false;
     }
