@@ -121,7 +121,7 @@ const ReguDashboard: React.FC<ReguDashboardProps> = ({
         status: attendanceData.status,
         reason: attendanceData.reason || '',
         date: jimpitanDate,
-        reguId: user.id
+        reguId: user.id // Ini akan dikirim ke Supabase melalui App.tsx
       };
     });
 
@@ -135,7 +135,7 @@ const ReguDashboard: React.FC<ReguDashboardProps> = ({
       alert('Absensi ronda berhasil dikirim ke Admin.');
     } catch (err) {
       console.error("Submission Error:", err);
-      alert('Gagal mengirim absensi. Periksa koneksi atau schema database.');
+      alert('Gagal mengirim absensi. Pastikan skema database sudah sesuai.');
     }
   };
 
