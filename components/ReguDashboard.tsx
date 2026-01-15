@@ -115,7 +115,6 @@ const ReguDashboard: React.FC<ReguDashboardProps> = ({
     const newAtt: Attendance[] = entries.map(([cid, data]) => {
       const attendanceData = data as { status: 'HADIR' | 'TIDAK_HADIR' | 'IZIN', reason?: string };
       return {
-        // Gunakan ID unik yang stabil agar logika 'menimpa' di App.tsx berjalan
         id: `att-${jimpitanDate}-${cid}`, 
         meetingId: 'ronda-harian',
         citizenId: cid,
@@ -126,10 +125,8 @@ const ReguDashboard: React.FC<ReguDashboardProps> = ({
       };
     });
 
-    // Kirim ke fungsi sinkronisasi di App.tsx
     try {
       await setAttendances(prev => {
-        // Hapus entri lama dengan tanggal & warga yang sama (Upsert manual logic)
         const newKeys = new Set(newAtt.map(a => `${a.date}-${a.citizenId}`));
         const filteredPrev = prev.filter(p => !newKeys.has(`${p.date}-${p.citizenId}`));
         return [...filteredPrev, ...newAtt];
@@ -137,8 +134,8 @@ const ReguDashboard: React.FC<ReguDashboardProps> = ({
       setTempAttendance({});
       alert('Absensi ronda berhasil dikirim ke Admin.');
     } catch (err) {
-      console.error(err);
-      alert('Gagal mengirim absensi. Pastikan koneksi stabil.');
+      console.error("Submission Error:", err);
+      alert('Gagal mengirim absensi. Periksa koneksi atau schema database.');
     }
   };
 
