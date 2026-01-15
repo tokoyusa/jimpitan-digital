@@ -25,7 +25,6 @@ import Navbar from './components/Navbar';
 const App: React.FC = () => {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
-  const [showConfigModal, setShowConfigModal] = useState(false);
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [showInstallBanner, setShowInstallBanner] = useState(false);
   
@@ -37,7 +36,6 @@ const App: React.FC = () => {
   const [attendances, setAttendances] = useState<Attendance[]>([]);
 
   const loadAllData = async () => {
-    if (!isConfigured) return;
     try {
       const [
         { data: sData },
@@ -74,7 +72,7 @@ const App: React.FC = () => {
           username: u.username,
           password: u.password,
           role: u.role as UserRole,
-          regu_name: u.regu_name
+          reguName: u.regu_name
         })));
       }
 
@@ -82,24 +80,23 @@ const App: React.FC = () => {
         id: j.id,
         citizenId: j.citizen_id,
         citizenName: j.citizen_name,
-        amount: j.amount,
-        jimpitanPortion: j.jimpitan_portion,
-        savings_portion: j.savings_portion,
+        amount: Number(j.amount) || 0,
+        jimpitanPortion: Number(j.jimpitan_portion) || 0,
+        savingsPortion: Number(j.savings_portion) || 0,
         date: j.date,
         reguName: j.regu_name,
-        is_sent: j.is_sent,
-        is_saved: j.is_saved
+        isSent: j.is_sent,
+        isSaved: j.is_saved
       })));
 
       if (mData) setMeetings(mData.map((m: any) => ({
         id: m.id,
         agenda: m.agenda,
         date: m.date,
-        minutes_number: m.minutes_number,
+        minutesNumber: m.minutes_number,
         notes: m.notes
       })));
 
-      // Fix: Correctly map attendance fields from database
       if (aData) setAttendances(aData.map((a: any) => ({
         id: a.id,
         meetingId: a.meeting_id,
@@ -115,10 +112,6 @@ const App: React.FC = () => {
   };
 
   useEffect(() => {
-    if (!isConfigured) {
-      setShowConfigModal(true);
-    }
-
     const init = async () => {
       await loadAllData();
       setLoading(false);
@@ -139,49 +132,21 @@ const App: React.FC = () => {
     init();
 
     window.addEventListener('beforeinstallprompt', (e) => {
-      // Deteksi mobile secara sederhana melalui userAgent atau screen width
       const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) || window.innerWidth < 768;
-      
       if (isMobile) {
         e.preventDefault();
         setDeferredPrompt(e);
         setShowInstallBanner(true);
       }
     });
-
-    window.addEventListener('appinstalled', () => {
-      setDeferredPrompt(null);
-      setShowInstallBanner(false);
-      console.log('PWA installed');
-    });
   }, []);
 
   const handleInstallClick = async () => {
     if (!deferredPrompt) return;
-    
-    // Tampilkan prompt instalasi browser
     deferredPrompt.prompt();
-    
-    // Tunggu respon pengguna
     const { outcome } = await deferredPrompt.userChoice;
-    console.log(`User response to install prompt: ${outcome}`);
-    
-    // Reset prompt karena hanya bisa digunakan sekali
     setDeferredPrompt(null);
     setShowInstallBanner(false);
-  };
-
-  const handleManualConfig = (e: React.FormEvent) => {
-    e.preventDefault();
-    const formData = new FormData(e.currentTarget as HTMLFormElement);
-    const url = formData.get('url') as string;
-    const key = formData.get('key') as string;
-    
-    if (url && key) {
-      localStorage.setItem('__manual_SUPABASE_URL', url);
-      localStorage.setItem('__manual_SUPABASE_ANON_KEY', key);
-      window.location.reload();
-    }
   };
 
   const syncSettings = async (newSettings: Settings) => {
@@ -225,12 +190,12 @@ const App: React.FC = () => {
     }
   };
 
-  if (loading && isConfigured) {
+  if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50">
         <div className="text-center">
           <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-slate-500 font-bold uppercase text-[10px] tracking-widest">Sinkronisasi Cloud...</p>
+          <p className="text-slate-500 font-bold uppercase text-[10px] tracking-widest">Memuat Data...</p>
         </div>
       </div>
     );
@@ -238,42 +203,20 @@ const App: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col">
-      {/* Manual Config Modal for emergency */}
-      {showConfigModal && (
-        <div className="fixed inset-0 z-[200] bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl p-8 max-w-md w-full shadow-2xl border border-blue-100">
-            <h2 className="text-2xl font-bold text-slate-800 mb-2">Konfigurasi Database</h2>
-            <p className="text-slate-500 text-sm mb-6">Database (Titik Kuning) belum terdeteksi. Silakan masukkan URL & Key Supabase Anda.</p>
-            <form onSubmit={handleManualConfig} className="space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-slate-400 uppercase mb-1">Supabase URL</label>
-                <input name="url" placeholder="https://xyz.supabase.co" className="w-full px-4 py-3 border rounded-xl text-sm" required />
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-slate-400 uppercase mb-1">Anon Key (API Key)</label>
-                <textarea name="key" rows={3} placeholder="eyJhbG..." className="w-full px-4 py-3 border rounded-xl text-sm" required />
-              </div>
-              <button type="submit" className="w-full bg-blue-600 text-white font-bold py-3 rounded-xl shadow-lg">Hubungkan Sekarang</button>
-              <button type="button" onClick={() => setShowConfigModal(false)} className="w-full text-slate-400 text-xs py-2">Lanjutkan Offline (Hanya Demo)</button>
-            </form>
-          </div>
-        </div>
-      )}
-
       {showInstallBanner && (
-        <div className="fixed bottom-4 left-4 right-4 z-[100] bg-blue-700 text-white p-4 rounded-2xl shadow-2xl border border-blue-500 flex items-center justify-between animate-bounce">
+        <div className="fixed bottom-4 left-4 right-4 z-[100] bg-blue-700 text-white p-4 rounded-2xl shadow-2xl flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="bg-white p-2 rounded-lg shadow-inner">
               <img src="https://cdn-icons-png.flaticon.com/512/3135/3135715.png" alt="icon" className="w-6 h-6" />
             </div>
             <div>
               <p className="font-bold text-sm leading-tight">Gunakan Aplikasi?</p>
-              <p className="text-[10px] text-blue-200">Tambahkan ke layar utama HP</p>
+              <p className="text-[10px] text-blue-200">Tambahkan ke layar utama</p>
             </div>
           </div>
           <div className="flex gap-2">
             <button onClick={() => setShowInstallBanner(false)} className="text-white/70 text-[10px] font-bold uppercase px-2">Nanti</button>
-            <button onClick={handleInstallClick} className="bg-white text-blue-700 px-4 py-2 rounded-xl text-xs font-black uppercase shadow-sm active:scale-95 transition-transform">Instal</button>
+            <button onClick={handleInstallClick} className="bg-white text-blue-700 px-4 py-2 rounded-xl text-xs font-black uppercase shadow-sm">Instal</button>
           </div>
         </div>
       )}
@@ -357,7 +300,7 @@ const App: React.FC = () => {
                       status: item.status,
                       reason: item.reason,
                       date: item.date,
-                      regu_id: item.reguId
+                      regu_id: item.reguId // Penting: regu_id snake_case untuk DB
                     })));
                   }
                 }}

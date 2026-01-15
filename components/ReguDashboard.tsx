@@ -121,14 +121,14 @@ const ReguDashboard: React.FC<ReguDashboardProps> = ({
         status: attendanceData.status,
         reason: attendanceData.reason || '',
         date: jimpitanDate,
-        reguId: user.id // Ini akan dikirim ke Supabase melalui App.tsx
+        reguId: user.id 
       };
     });
 
     try {
       await setAttendances(prev => {
         const newKeys = new Set(newAtt.map(a => `${a.date}-${a.citizenId}`));
-        const filteredPrev = prev.filter(p => !newKeys.has(`${p.date}-${p.citizenId}`));
+        const filteredPrev = (prev || []).filter(p => !newKeys.has(`${p.date}-${p.citizenId}`));
         return [...filteredPrev, ...newAtt];
       });
       setTempAttendance({});
