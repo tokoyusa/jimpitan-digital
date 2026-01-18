@@ -34,6 +34,10 @@ const App: React.FC = () => {
   const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [attendances, setAttendances] = useState<Attendance[]>([]);
 
+  // PWA Install State
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+  const [showInstallBanner, setShowInstallBanner] = useState(false);
+
   // Persistence Login
   useEffect(() => {
     const savedSession = localStorage.getItem('jimpitan_v2_session');
@@ -45,7 +49,29 @@ const App: React.FC = () => {
         localStorage.removeItem('jimpitan_v2_session');
       }
     }
+
+    // PWA Install Prompt Listener
+    window.addEventListener('beforeinstallprompt', (e) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+      setShowInstallBanner(true);
+    });
+
+    window.addEventListener('appinstalled', () => {
+      setShowInstallBanner(false);
+      setDeferredPrompt(null);
+    });
   }, []);
+
+  const handleInstallClick = async () => {
+    if (!deferredPrompt) return;
+    deferredPrompt.prompt();
+    const { outcome } = await deferredPrompt.userChoice;
+    if (outcome === 'accepted') {
+      setShowInstallBanner(false);
+    }
+    setDeferredPrompt(null);
+  };
 
   const handleLogin = (user: User) => {
     setCurrentUser(user);
@@ -138,8 +164,6 @@ const App: React.FC = () => {
 
   const handleSetAttendances = async (arg: Attendance[] | ((prev: Attendance[]) => Attendance[])) => {
     const newAttendances = typeof arg === 'function' ? arg(attendances) : arg;
-    
-    // Update state lokal untuk responsivitas instan
     setAttendances(newAttendances);
 
     if (isConfigured && newAttendances.length > 0) {
@@ -153,17 +177,9 @@ const App: React.FC = () => {
           date: a.date,
           regu_id: a.reguId || ''
         }));
-
-        // Upsert akan menggantikan baris dengan ID yang sama (id: att-YYYY-MM-DD-citizenId)
         const { error } = await supabase.from('attendances').upsert(payload);
-        
-        if (error) {
-          console.error("Database Save Error:", error.message);
-          setErrorStatus(`Gagal simpan absensi: ${error.message}`);
-        } else {
-          console.log("Absensi berhasil disimpan ke database.");
-          setErrorStatus(null);
-        }
+        if (error) setErrorStatus(`Gagal simpan absensi: ${error.message}`);
+        else setErrorStatus(null);
       } catch (err: any) {
         console.error("Critical Sync Error:", err);
       }
@@ -218,11 +234,40 @@ const App: React.FC = () => {
       ) : (
         <>
           <Navbar user={currentUser} onLogout={handleLogout} villageName={settings.villageName} />
+          
+          {/* PWA Install Banner */}
+          {showInstallBanner && (
+            <div className="bg-blue-800 text-white px-4 py-3 flex items-center justify-between shadow-lg animate-in slide-in-from-top duration-500">
+              <div className="flex items-center gap-3">
+                <div className="bg-white/20 p-2 rounded-lg text-lg">📲</div>
+                <div>
+                  <p className="text-xs font-black uppercase tracking-tight">Pasang Aplikasi</p>
+                  <p className="text-[10px] text-blue-200">Akses lebih cepat & mudah dari layar utama</p>
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <button 
+                  onClick={handleInstallClick}
+                  className="bg-white text-blue-800 px-4 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest shadow-md active:scale-95"
+                >
+                  Pasang
+                </button>
+                <button 
+                  onClick={() => setShowInstallBanner(false)}
+                  className="text-white/60 p-1.5"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+          )}
+
           {errorStatus && (
             <div className="bg-red-600 text-white text-[10px] font-bold py-1.5 px-4 text-center uppercase tracking-widest animate-pulse">
               ⚠️ {errorStatus}
             </div>
           )}
+
           <main className="flex-grow max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-6 w-full pb-10">
             {currentUser.role === UserRole.ADMIN && (
               <AdminDashboard 
