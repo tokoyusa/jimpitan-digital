@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { 
   User, 
   UserRole, 
@@ -34,15 +34,13 @@ const App: React.FC = () => {
   const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [attendances, setAttendances] = useState<Attendance[]>([]);
 
-  // 1. LOGIN PERSISTENCE: Memastikan session tetap ada setelah refresh
+  // Persistence Login
   useEffect(() => {
     const savedSession = localStorage.getItem('jimpitan_v2_session');
     if (savedSession) {
       try {
         const parsed = JSON.parse(savedSession);
-        if (parsed && parsed.id) {
-          setCurrentUser(parsed);
-        }
+        if (parsed && parsed.id) setCurrentUser(parsed);
       } catch (e) {
         localStorage.removeItem('jimpitan_v2_session');
       }
@@ -59,7 +57,8 @@ const App: React.FC = () => {
     localStorage.removeItem('jimpitan_v2_session');
   };
 
-  const loadAllData = async () => {
+  // Load Data
+  const loadAllData = useCallback(async () => {
     if (!isConfigured) return;
     try {
       const [sRes, cRes, uRes, jRes, mRes, aRes] = await Promise.all([
@@ -81,23 +80,29 @@ const App: React.FC = () => {
         id: c.id, name: c.name, reguId: c.regu_id, displayOrder: c.display_order
       })));
 
-      if (uRes.data && uRes.data.length > 0) {
+      if (uRes.data) {
         setUsers(uRes.data.map((u: any) => ({
           id: u.id, username: u.username, password: u.password, role: u.role as UserRole, reguName: u.regu_name
         })));
       }
 
       if (jRes.data) setJimpitanData(jRes.data.map((j: any) => ({
-        id: j.id, citizenId: j.citizen_id, citizenName: j.citizen_name, amount: j.amount,
-        jimpitanPortion: j.jimpitan_portion, savings_portion: j.savings_portion,
-        date: j.date, reguName: j.regu_name, isSent: j.is_sent, isSaved: j.is_saved
+        id: j.id, 
+        citizenId: j.citizen_id, 
+        citizenName: j.citizen_name, 
+        amount: Number(j.amount) || 0,
+        jimpitanPortion: Number(j.jimpitan_portion) || 0, 
+        savingsPortion: Number(j.savings_portion) || 0,
+        date: j.date, 
+        reguName: j.regu_name, 
+        isSent: j.is_sent, 
+        isSaved: j.is_saved
       })));
 
       if (mRes.data) setMeetings(mRes.data.map((m: any) => ({
         id: m.id, agenda: m.agenda, date: m.date, minutesNumber: m.minutes_number, notes: m.notes
       })));
 
-      // CRITICAL FIX: Memastikan reguId terambil dari kolom database regu_id
       if (aRes.data) setAttendances(aRes.data.map((a: any) => ({
         id: a.id, 
         meetingId: a.meeting_id, 
@@ -105,50 +110,93 @@ const App: React.FC = () => {
         status: a.status,
         reason: a.reason, 
         date: a.date, 
-        reguId: a.regu_id 
+        reguId: a.regu_id
       })));
 
       setErrorStatus(null);
     } catch (e: any) {
-      console.warn("DB Load Error:", e.message);
-      setErrorStatus("Sinkronisasi cloud tertunda. Cek SQL Editor Supabase.");
+      console.warn("Load error:", e.message);
+      setErrorStatus("Gagal sinkronisasi data.");
     }
-  };
+  }, []);
 
   useEffect(() => {
     const init = async () => {
       await loadAllData();
       setLoading(false);
-
       if (isConfigured) {
-        const channel = supabase.channel('realtime_all_v2')
-          .on('postgres_changes', { event: '*', schema: 'public' }, () => loadAllData())
+        const channel = supabase.channel('realtime_main')
+          .on('postgres_changes', { event: '*', schema: 'public' }, () => {
+             loadAllData();
+          })
           .subscribe();
         return () => { supabase.removeChannel(channel); };
       }
     };
     init();
-  }, []);
+  }, [loadAllData]);
 
-  // Helpers for syncing
-  const syncAttendances = async (val: Attendance[]) => {
-    if (!isConfigured) return;
-    try {
-      // Map data dari variabel frontend ke kolom database backend secara eksplisit
-      const toUpsert = val.map(a => ({
-        id: a.id,
-        meeting_id: a.meetingId,
-        citizen_id: a.citizenId,
-        status: a.status,
-        reason: a.reason || '',
-        date: a.date,
-        regu_id: a.reguId // Pastikan dikirim ke kolom regu_id di Supabase
-      }));
-      
-      const { error } = await supabase.from('attendances').upsert(toUpsert);
-      if (error) throw error;
-    } catch (err) {
-      console.error("Sync Attendances Error:", err);
+  const handleSetAttendances = async (arg: Attendance[] | ((prev: Attendance[]) => Attendance[])) => {
+    const newAttendances = typeof arg === 'function' ? arg(attendances) : arg;
+    
+    // Update state lokal untuk responsivitas instan
+    setAttendances(newAttendances);
+
+    if (isConfigured && newAttendances.length > 0) {
+      try {
+        const payload = newAttendances.map(a => ({
+          id: a.id,
+          meeting_id: a.meetingId || 'ronda-harian',
+          citizen_id: a.citizenId,
+          status: a.status,
+          reason: a.reason || '',
+          date: a.date,
+          regu_id: a.reguId || ''
+        }));
+
+        // Upsert akan menggantikan baris dengan ID yang sama (id: att-YYYY-MM-DD-citizenId)
+        const { error } = await supabase.from('attendances').upsert(payload);
+        
+        if (error) {
+          console.error("Database Save Error:", error.message);
+          setErrorStatus(`Gagal simpan absensi: ${error.message}`);
+        } else {
+          console.log("Absensi berhasil disimpan ke database.");
+          setErrorStatus(null);
+        }
+      } catch (err: any) {
+        console.error("Critical Sync Error:", err);
+      }
+    }
+  };
+
+  const syncSettings = async (newSettings: Settings) => {
+    setSettings(newSettings);
+    if (isConfigured) {
+      await supabase.from('settings').upsert({
+        id: 'default', village_name: newSettings.villageName,
+        address: newSettings.address, jimpitan_nominal: newSettings.jimpitanNominal
+      });
+    }
+  };
+
+  const syncUsers = async (arg: any) => {
+    const newUsers = typeof arg === 'function' ? arg(users) : arg;
+    setUsers(newUsers);
+    if (isConfigured) {
+      await supabase.from('users_app').upsert(newUsers.map((u: any) => ({
+        id: u.id, username: u.username, password: u.password, role: u.role, regu_name: u.reguName
+      })));
+    }
+  };
+
+  const syncCitizens = async (arg: any) => {
+    const newCitizens = typeof arg === 'function' ? arg(citizens) : arg;
+    setCitizens(newCitizens);
+    if (isConfigured) {
+      await supabase.from('citizens').upsert(newCitizens.map((c: any) => ({
+        id: c.id, name: c.name, regu_id: c.reguId, display_order: c.displayOrder
+      })));
     }
   };
 
@@ -157,7 +205,7 @@ const App: React.FC = () => {
       <div className="min-h-screen flex items-center justify-center bg-blue-50">
         <div className="text-center">
           <div className="w-16 h-16 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-blue-800 font-bold text-[10px] uppercase tracking-widest animate-pulse">Menghubungkan Database...</p>
+          <p className="text-blue-800 font-bold text-xs uppercase tracking-widest animate-pulse">Menghubungkan...</p>
         </div>
       </div>
     );
@@ -170,13 +218,12 @@ const App: React.FC = () => {
       ) : (
         <>
           <Navbar user={currentUser} onLogout={handleLogout} villageName={settings.villageName} />
-          <main className="flex-grow max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-6 w-full">
-            {errorStatus && (
-              <div className="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-xl text-amber-800 text-[10px] font-bold animate-bounce">
-                ⚠️ DATA TIDAK TERSIMPAN: Tabel 'attendances' atau kolom 'regu_id' tidak ditemukan. Jalankan SQL Script di Supabase.
-              </div>
-            )}
-
+          {errorStatus && (
+            <div className="bg-red-600 text-white text-[10px] font-bold py-1.5 px-4 text-center uppercase tracking-widest animate-pulse">
+              ⚠️ {errorStatus}
+            </div>
+          )}
+          <main className="flex-grow max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-6 w-full pb-10">
             {currentUser.role === UserRole.ADMIN && (
               <AdminDashboard 
                 settings={settings} setSettings={syncSettings}
@@ -194,11 +241,7 @@ const App: React.FC = () => {
                   }
                 }}
                 attendances={attendances}
-                setAttendances={async (a: any) => {
-                  const val = typeof a === 'function' ? a(attendances) : a;
-                  setAttendances(val);
-                  await syncAttendances(val);
-                }}
+                setAttendances={handleSetAttendances}
               />
             )}
             
@@ -211,17 +254,22 @@ const App: React.FC = () => {
                   setJimpitanData(newData);
                   if(isConfigured) {
                     await supabase.from('jimpitan_records').upsert(newData.map((j: any) => ({
-                      id: j.id, citizen_id: j.citizenId, citizen_name: j.citizenName, amount: j.amount, jimpitan_portion: j.jimpitanPortion, savings_portion: j.savingsPortion, date: j.date, regu_name: j.reguName, is_sent: j.isSent, is_saved: j.isSaved
+                      id: j.id, 
+                      citizen_id: j.citizenId, 
+                      citizen_name: j.citizenName, 
+                      amount: j.amount, 
+                      jimpitan_portion: j.jimpitanPortion, 
+                      savings_portion: j.savingsPortion, 
+                      date: j.date, 
+                      regu_name: j.reguName, 
+                      is_sent: j.isSent, 
+                      is_saved: j.isSaved
                     })));
                   }
                 }}
                 meetings={meetings} 
                 attendances={attendances}
-                setAttendances={async (val: any) => {
-                  const newData = typeof val === 'function' ? val(attendances) : val;
-                  setAttendances(newData);
-                  await syncAttendances(newData);
-                }}
+                setAttendances={handleSetAttendances}
                 users={users} setUsers={syncUsers}
               />
             )}
@@ -234,44 +282,13 @@ const App: React.FC = () => {
               />
             )}
           </main>
-          <footer className="py-6 text-center text-slate-400 text-xs font-medium uppercase tracking-widest">
-            aplikasi jimpitan v2.2 • YUSAPEDIA
+          <footer className="py-6 text-center text-slate-400 text-[10px] font-bold uppercase tracking-widest">
+            aplikasi jimpitan v2.8 • YUSAPEDIA
           </footer>
         </>
       )}
     </div>
   );
-
-  // Re-define sync functions that were missing or incorrectly placed
-  async function syncSettings(newSettings: Settings) {
-    setSettings(newSettings);
-    if (isConfigured) {
-      await supabase.from('settings').upsert({
-        id: 'default', village_name: newSettings.villageName,
-        address: newSettings.address, jimpitan_nominal: newSettings.jimpitanNominal
-      });
-    }
-  }
-
-  async function syncUsers(arg: any) {
-    const newUsers = typeof arg === 'function' ? arg(users) : arg;
-    setUsers(newUsers);
-    if (isConfigured) {
-      await supabase.from('users_app').upsert(newUsers.map((u: any) => ({
-        id: u.id, username: u.username, password: u.password, role: u.role, regu_name: u.reguName
-      })));
-    }
-  }
-
-  async function syncCitizens(arg: any) {
-    const newCitizens = typeof arg === 'function' ? arg(citizens) : arg;
-    setCitizens(newCitizens);
-    if (isConfigured) {
-      await supabase.from('citizens').upsert(newCitizens.map((c: any) => ({
-        id: c.id, name: c.name, regu_id: c.reguId, display_order: c.displayOrder
-      })));
-    }
-  }
 };
 
 export default App;
